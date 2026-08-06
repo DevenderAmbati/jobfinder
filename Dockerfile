@@ -8,6 +8,8 @@ WORKDIR /app
 
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 COPY backend/package.json backend/package-lock.json ./backend/
+# Schema must exist before backend npm ci (postinstall runs `prisma generate`)
+COPY backend/prisma ./backend/prisma
 
 RUN npm ci --prefix frontend
 RUN npm ci --prefix backend
