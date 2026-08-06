@@ -1,0 +1,61 @@
+{
+  "name": "jobfinder-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Job Intelligence Platform API",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build:frontend": "npm --prefix ../frontend run build && node scripts/copy-frontend.mjs",
+    "build": "npm run build:frontend && tsc -p tsconfig.json",
+    "build:server": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "start:prod": "prisma migrate deploy && node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate": "prisma migrate deploy",
+    "migrate:dev": "prisma migrate dev",
+    "seed": "tsx prisma/seed.ts",
+    "db:export-sqlite": "tsx prisma/export-sqlite-data.ts",
+    "db:import": "tsx prisma/import-data.ts",
+    "db:local-pg": "node scripts/ensure-local-postgres.mjs",
+    "db:bootstrap": "node scripts/bootstrap-local-postgres.mjs",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "cron-parser": "^5.7.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
+    "multer": "^2.2.0",
+    "node-cron": "^4.6.0",
+    "playwright": "^1.62.1",
+    "prisma": "^6.19.3"
+  },
+  "devDependencies": {
+    "@types/compression": "^1.8.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^26.1.2",
+    "@types/node-cron": "^3.0.11",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "tsx": "^4.23.5",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  }
+}

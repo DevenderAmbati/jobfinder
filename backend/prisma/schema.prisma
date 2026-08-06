@@ -1,0 +1,158 @@
+// V1 persistence schema — PostgreSQL (production).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ApplicationStatus {
+  SAVED
+  APPLIED
+  INTERVIEW
+  REJECTED
+  OFFER
+  JOINED
+}
+
+enum ProviderRunStatus {
+  IDLE
+  RUNNING
+  SUCCESS
+  FAILURE
+}
+
+enum MatchSource {
+  GEMINI
+  KEYWORD
+}
+
+model Company {
+  id           String        @id @default(cuid())
+  name         String
+  provider     String
+  careerUrl    String
+  enabled      Boolean       @default(true)
+  frequency    String        @default("0 */6 * * *")
+  lastRun      DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  jobs         Job[]
+  providerLogs ProviderLog[]
+}
+
+model Job {
+  id                  String             @id @default(cuid())
+  companyId           String
+  company             Company            @relation(fields: [companyId], references: [id])
+  title               String
+  location            String?
+  description         String?
+  experience          String?
+  skills              String?
+  salary              String?
+  postedDate          DateTime?
+  applyUrl            String
+  provider            String
+  dedupHash           String             @unique
+  matchScore          Float?
+  matchReasons        String?
+  missingSkills       String?
+  interviewDifficulty String?
+  salaryEstimate      String?
+  recommendation      String?
+  matchSource         MatchSource?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  application         Application?
+  notifications       NotificationLog[]
+}
+
+model Rule {
+  id            String   @id @default(cuid())
+  name          String   @default("default")
+  countries     String?
+  cities        String?
+  experience    String?
+  skills        String?
+  roles         String?
+  excludedRoles String?
+  companies     String?
+  minMatchScore Float    @default(80)
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Resume {
+  id              String   @id @default(cuid())
+  originalPdfPath String?
+  extractedText   String
+  markdown        String
+  /// Future semantic search — nullable until embeddings land
+  embedding       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Application {
+  id        String            @id @default(cuid())
+  jobId     String            @unique
+  job       Job               @relation(fields: [jobId], references: [id])
+  status    ApplicationStatus @default(SAVED)
+  notes     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model NotificationLog {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id])
+  channel   String   @default("telegram")
+  success   Boolean
+  payload   String?
+  error     String?
+  createdAt DateTime @default(now())
+}
+
+model ProviderLog {
+  id         String    @id @default(cuid())
+  companyId  String?
+  company    Company?  @relation(fields: [companyId], references: [id])
+  provider   String
+  startTime  DateTime
+  endTime    DateTime?
+  jobsFound  Int       @default(0)
+  jobsAdded  Int       @default(0)
+  durationMs Int?
+  error      String?
+  createdAt  DateTime  @default(now())
+}
+
+model ProviderHealth {
+  id                   String            @id @default(cuid())
+  provider             String            @unique
+  status               ProviderRunStatus @default(IDLE)
+  lastRun              DateTime?
+  lastSuccess          DateTime?
+  averageExecutionTime Float             @default(0)
+  failureCount         Int               @default(0)
+  lastError            String?
+  updatedAt            DateTime          @updatedAt
+}
+
+model PromptTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  version   Int
+  content   String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, version])
+}

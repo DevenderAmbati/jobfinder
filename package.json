@@ -1,0 +1,26 @@
+{
+  "name": "jobfinder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Job Intelligence Platform — monorepo orchestrator",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm --prefix backend run dev",
+    "dev:web": "npm --prefix frontend run dev",
+    "build": "npm --prefix backend run build",
+    "build:server": "npm --prefix backend run build:server",
+    "start": "npm --prefix backend run start",
+    "start:prod": "npm --prefix backend run start:prod",
+    "migrate": "npm --prefix backend run migrate",
+    "seed": "npm --prefix backend run seed",
+    "db:local-pg": "npm --prefix backend run db:local-pg",
+    "db:bootstrap": "npm --prefix backend run db:bootstrap",
+    "db:import": "npm --prefix backend run db:import",
+    "test": "npm --prefix backend run test",
+    "lint": "npm --prefix frontend run lint",
+    "typecheck": "npm --prefix backend run typecheck",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install"
+  }
+}

@@ -1,0 +1,46 @@
+# Environment
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+backend/logs/
+
+# Prisma
+backend/prisma/*.db
+backend/prisma/*.db-journal
+backend/prisma/data-export.json
+backend/prisma/backups/
+
+# Production UI bundle copied into the API process
+backend/public/
+backend/dist/
+
+# Local embedded Postgres data (fallback when Docker is unavailable)
+backend/.pgdata/
+backend/.pgdata-utf8/
+backend/.pgdata-dead-*/
+
+# Uploads / resume PDFs
+backend/uploads/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Frontend
+frontend/dist/
+frontend/node_modules/
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Local probe / scratch scripts
+backend/tmp-*.mjs
+backend/tmp-*.ts
+

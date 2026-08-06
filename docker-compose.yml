@@ -1,0 +1,27 @@
+# Local PostgreSQL for development (Step 1 — SQLite → Postgres).
+# Requires Docker Desktop: https://www.docker.com/products/docker-desktop/
+#
+#   docker compose up -d
+#   # then set DATABASE_URL in backend/.env (see .env.example)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: jobfinder-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: jobfinder
+      POSTGRES_PASSWORD: jobfinder
+      POSTGRES_DB: jobfinder
+    volumes:
+      - jobfinder_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U jobfinder -d jobfinder']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  jobfinder_pgdata:
