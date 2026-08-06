@@ -6,19 +6,25 @@ FROM mcr.microsoft.com/playwright:v1.62.1-jammy AS build
 
 WORKDIR /app
 
+# Frontend deps (no Prisma)
 COPY frontend/package.json frontend/package-lock.json ./frontend/
-COPY backend/package.json backend/package-lock.json ./backend/
-# Schema must exist before backend npm ci (postinstall runs `prisma generate`)
-COPY backend/prisma ./backend/prisma
-
 RUN npm ci --prefix frontend
-RUN npm ci --prefix backend
+
+# Backend deps: install FROM /app/backend so postinstall `prisma generate`
+# resolves ./prisma/schema.prisma (npm --prefix can leave cwd at /app).
+COPY backend/package.json backend/package-lock.json ./backend/
+COPY backend/prisma ./backend/prisma
+WORKDIR /app/backend
+RUN npm ci
+WORKDIR /app
 
 COPY frontend ./frontend
 COPY backend ./backend
 
 # Vite build → backend/public, then compile the API
-RUN npm run build --prefix backend
+WORKDIR /app/backend
+RUN npm run build
+WORKDIR /app
 
 FROM mcr.microsoft.com/playwright:v1.62.1-jammy AS runtime
 
