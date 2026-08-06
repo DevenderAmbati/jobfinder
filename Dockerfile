@@ -1,21 +1,22 @@
 # syntax=docker/dockerfile:1
 # Single-process Jobfinder image: Express + React build + Playwright Chromium + Prisma.
 # Base image ships Chromium matching the Playwright npm version.
+# Build marker: jobfinder-docker-v3 (if Railway logs still show "npm ci --prefix backend", it is not this file)
 
 FROM mcr.microsoft.com/playwright:v1.62.1-jammy AS build
 
 WORKDIR /app
 
-# Frontend deps (no Prisma)
+# Frontend deps
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 RUN npm ci --prefix frontend
 
-# Backend deps: install FROM /app/backend so postinstall `prisma generate`
-# resolves ./prisma/schema.prisma (npm --prefix can leave cwd at /app).
+# Backend deps — copy schema first; skip lifecycle scripts, then generate explicitly
 COPY backend/package.json backend/package-lock.json ./backend/
 COPY backend/prisma ./backend/prisma
 WORKDIR /app/backend
-RUN npm ci
+RUN npm ci --ignore-scripts
+RUN npx prisma generate --schema /app/backend/prisma/schema.prisma
 WORKDIR /app
 
 COPY frontend ./frontend
