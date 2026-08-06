@@ -61,9 +61,11 @@ app.use(errorHandler);
 
 export function startServer(): Server {
   container.startWorkers();
-  const server = app.listen(config.port, () => {
+  // Bind all interfaces — required behind Railway/Docker (default can miss healthchecks).
+  const server = app.listen(config.port, '0.0.0.0', () => {
     logger.info('Server listening', {
       port: config.port,
+      host: '0.0.0.0',
       env: config.nodeEnv,
       logLevel: config.logLevel,
       logToFiles: config.logToFiles,
