@@ -68,7 +68,7 @@ export class DevToolsService {
     return this.deps.rescoreJobs.execute(options);
   }
 
-  async testTelegram() {
+  async testTelegram(chatId?: string) {
     const sampleJob: Job = {
       id: 'dev-test-job',
       company: 'Dev Tools',
@@ -94,13 +94,14 @@ export class DevToolsService {
         recommendation: 'APPLY',
         source: 'KEYWORD',
       },
+      chatId,
     });
 
     return { ok: true, message: 'Telegram/logging notifier invoked' };
   }
 
-  async testGemini() {
-    const resume = await this.deps.resumes.findCurrent();
+  async testGemini(userId: string) {
+    const resume = await this.deps.resumes.findCurrent(userId);
     const resumeText =
       resumeMatchText(resume) ||
       'Software Engineer with TypeScript, React, and Node.js experience.';
@@ -146,32 +147,36 @@ export class DevToolsService {
     return job;
   }
 
-  async ruleEvaluation(jobId: string) {
+  async ruleEvaluation(jobId: string, userId: string) {
     const job = await this.deps.jobs.findById(jobId);
     if (!job) {
       throw new AppError('JOB_NOT_FOUND', `Job ${jobId} not found`, 404);
     }
-    const rule = await this.deps.rules.findActive();
+    const rule = await this.deps.rules.findByUserId(userId);
     const evaluation = this.deps.ruleEngine.evaluate(job, rule);
     return { job, rule, evaluation };
   }
 
-  async aiOutput(jobId: string) {
-    const row = await this.deps.prisma.job.findUnique({ where: { id: jobId } });
+  async aiOutput(jobId: string, userId: string) {
+    const row = await this.deps.prisma.job.findUnique({
+      where: { id: jobId },
+      include: { matches: { where: { userId }, take: 1 } },
+    });
     if (!row) {
       throw new AppError('JOB_NOT_FOUND', `Job ${jobId} not found`, 404);
     }
 
+    const match = row.matches[0];
     return {
       jobId: row.id,
       title: row.title,
-      matchScore: row.matchScore,
-      matchSource: row.matchSource,
-      matchReasons: parseJsonArray(row.matchReasons),
-      missingSkills: parseJsonArray(row.missingSkills),
-      interviewDifficulty: row.interviewDifficulty,
-      salaryEstimate: row.salaryEstimate,
-      recommendation: row.recommendation,
+      matchScore: match?.matchScore ?? null,
+      matchSource: match?.matchSource ?? null,
+      matchReasons: parseJsonArray(match?.matchReasons ?? null),
+      missingSkills: parseJsonArray(match?.missingSkills ?? null),
+      interviewDifficulty: match?.interviewDifficulty ?? null,
+      salaryEstimate: match?.salaryEstimate ?? null,
+      recommendation: match?.recommendation ?? null,
     };
   }
 
@@ -189,14 +194,16 @@ export class DevToolsService {
   }
 
   async clearDatabase() {
-    // Keep companies, rules, resume, prompts, provider health.
+    // Keep companies, rules, users/resumes, prompts, provider health.
     const applications = await this.deps.prisma.application.deleteMany();
+    const matches = await this.deps.prisma.jobMatch.deleteMany();
     const notifications = await this.deps.prisma.notificationLog.deleteMany();
     const providerLogs = await this.deps.prisma.providerLog.deleteMany();
     const jobs = await this.deps.prisma.job.deleteMany();
 
     logger.warn('Dev tools cleared database job data', {
       applications: applications.count,
+      matches: matches.count,
       notifications: notifications.count,
       providerLogs: providerLogs.count,
       jobs: jobs.count,
@@ -204,10 +211,18 @@ export class DevToolsService {
 
     return {
       deletedApplications: applications.count,
+      deletedJobMatches: matches.count,
       deletedNotificationLogs: notifications.count,
       deletedProviderLogs: providerLogs.count,
       deletedJobs: jobs.count,
-      preserved: ['companies', 'rules', 'resume', 'prompts', 'providerHealth'],
+      preserved: [
+        'companies',
+        'rules',
+        'users',
+        'resumes',
+        'prompts',
+        'providerHealth',
+      ],
     };
   }
 

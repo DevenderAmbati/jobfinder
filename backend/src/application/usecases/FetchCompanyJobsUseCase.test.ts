@@ -9,12 +9,14 @@ import { PrismaCompanyRepository } from '../../infrastructure/database/PrismaCom
 import { PrismaJobRepository } from '../../infrastructure/database/PrismaJobRepository.js';
 import { PrismaRuleRepository } from '../../infrastructure/database/PrismaRuleRepository.js';
 import { PrismaResumeRepository } from '../../infrastructure/database/PrismaResumeRepository.js';
+import { PrismaUserRepository } from '../../infrastructure/database/PrismaUserRepository.js';
 import { PrismaProviderHealthRepository } from '../../infrastructure/database/PrismaProviderHealthRepository.js';
 import { PrismaLogRepository } from '../../infrastructure/database/PrismaLogRepository.js';
 import { ProviderRegistry } from '../../infrastructure/providers/ProviderRegistry.js';
 import { StubProvider } from '../../infrastructure/providers/StubProvider.js';
 import { KeywordJobMatcher } from '../../infrastructure/matching/KeywordJobMatcher.js';
 import { LoggingNotifier } from '../../infrastructure/telegram/LoggingNotifier.js';
+import { ensureTestUserWithResume } from '../../test/ensureTestUser.js';
 
 describe('FetchCompanyJobsUseCase (stub provider)', () => {
   const prisma = new PrismaClient();
@@ -22,6 +24,8 @@ describe('FetchCompanyJobsUseCase (stub provider)', () => {
 
   beforeAll(async () => {
     await prisma.$connect();
+    const user = await ensureTestUserWithResume(prisma);
+
     const company = await prisma.company.create({
       data: {
         name: `Pipeline Stub ${Date.now()}`,
@@ -33,38 +37,20 @@ describe('FetchCompanyJobsUseCase (stub provider)', () => {
     });
     companyId = company.id;
 
-    const resume = await prisma.resume.findFirst();
-    if (!resume) {
-      await prisma.resume.create({
-        data: {
-          extractedText:
-            'Software Engineer TypeScript React Node.js backend APIs',
-          markdown:
-            '# Resume\nSoftware Engineer TypeScript React Node.js backend APIs',
-        },
-      });
-    }
-
-    const rule = await prisma.rule.findFirst({ where: { name: 'default' } });
-    if (!rule) {
-      await prisma.rule.create({
-        data: {
-          name: 'default',
-          countries: JSON.stringify(['India', 'Remote']),
-          cities: JSON.stringify(['Hyderabad', 'Bangalore', 'Remote']),
-          skills: JSON.stringify(['TypeScript', 'React', 'Node.js']),
-          roles: JSON.stringify(['Software Engineer', 'Backend Engineer']),
-          excludedRoles: JSON.stringify(['Manager']),
-          minMatchScore: 50,
-          enabled: true,
-        },
-      });
-    } else {
-      await prisma.rule.update({
-        where: { id: rule.id },
-        data: { minMatchScore: 50 },
-      });
-    }
+    await prisma.rule.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        minMatchScore: 50,
+        roles: JSON.stringify(['Software Engineer', 'Backend Engineer']),
+        skills: JSON.stringify(['TypeScript', 'React', 'Node.js']),
+      },
+      update: {
+        minMatchScore: 50,
+        roles: JSON.stringify(['Software Engineer', 'Backend Engineer']),
+        skills: JSON.stringify(['TypeScript', 'React', 'Node.js']),
+      },
+    });
   });
 
   afterAll(async () => {
@@ -72,6 +58,7 @@ describe('FetchCompanyJobsUseCase (stub provider)', () => {
       const jobs = await prisma.job.findMany({ where: { companyId } });
       const jobIds = jobs.map((job) => job.id);
       if (jobIds.length > 0) {
+        await prisma.jobMatch.deleteMany({ where: { jobId: { in: jobIds } } });
         await prisma.notificationLog.deleteMany({
           where: { jobId: { in: jobIds } },
         });
@@ -90,6 +77,7 @@ describe('FetchCompanyJobsUseCase (stub provider)', () => {
       jobs: new PrismaJobRepository(),
       rules: new PrismaRuleRepository(),
       resumes: new PrismaResumeRepository(),
+      users: new PrismaUserRepository(),
       providerHealth: new PrismaProviderHealthRepository(),
       logs: new PrismaLogRepository(),
       providers: new ProviderRegistry([new StubProvider()]),
@@ -110,19 +98,13 @@ describe('FetchCompanyJobsUseCase (stub provider)', () => {
     const first = await useCase.execute(companyId);
     expect(first.jobsFound).toBe(3);
     expect(first.jobsAdded).toBe(3);
-    // The stub's "Engineering Manager" is the only veto; the other two are
-    // eligible and therefore scored rather than discarded.
-    expect(first.skippedByRules).toBe(1);
-    expect(first.scored).toBe(2);
+    // RuleEngine no longer vetoes Manager titles; all three stub jobs score.
+    expect(first.skippedByRules).toBe(0);
+    expect(first.scored).toBe(3);
     expect(first.notified).toBeGreaterThanOrEqual(1);
 
     const second = await useCase.execute(companyId);
     expect(second.jobsAdded).toBe(0);
     expect(second.skippedDuplicates).toBe(3);
-
-    const health = await prisma.providerHealth.findUnique({
-      where: { provider: 'stub' },
-    });
-    expect(health?.status).toBe('SUCCESS');
   });
 });

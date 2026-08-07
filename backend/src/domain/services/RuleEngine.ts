@@ -1,6 +1,5 @@
 import type { Job } from '../entities/Job.js';
-import type { Rule } from '../entities/Rule.js';
-import { LocationMatcher } from './LocationMatcher.js';
+import { ruleHasPreferences, type Rule } from '../entities/Rule.js';
 import {
   containsPhrase,
   containsTerm,
@@ -8,7 +7,7 @@ import {
   normalizeText,
 } from './textMatching.js';
 
-export type FitDimension = 'role' | 'skills';
+export type FitDimension = 'role' | 'skills' | 'experience';
 
 export interface FitSignal {
   dimension: FitDimension;
@@ -20,45 +19,41 @@ export interface FitSignal {
 
 export interface RuleEvaluation {
   /**
-   * False only for explicit disqualifiers (excluded role in the title, or a
-   * company outside the allow-list). Ineligible jobs are never scored.
+   * Always true for the simplified preference rules — scoring never vetoes
+   * solely on preferences (resume match still ranks every eligible listing).
    */
   eligible: boolean;
   vetoReason: string | null;
-  /** Graded 0–100 relevance against the configured rule dimensions. */
+  /** Graded 0–100 against configured roles / skills / experience. */
   fitScore: number;
+  /** Kept for scoring API compatibility; location is not part of user rules. */
   locationMatched: boolean;
   signals: FitSignal[];
   reasons: string[];
+  /** Whether roles/skills/experience were set (drives 60/40 vs resume-only). */
+  applyRuleFit: boolean;
 }
 
-/** Relative importance of each dimension, renormalized over those configured. */
 const DIMENSION_WEIGHTS: Record<FitDimension, number> = {
   role: 40,
-  skills: 60,
+  skills: 40,
+  experience: 20,
 };
 
-// `fitScore` intentionally covers role and skills only. Location is reported
-// separately via `locationMatched` and applied by RelevanceScorer, so that it
-// scales the final score instead of being averaged away.
-
 /**
- * Evaluates a job against the active rule. Produces a narrow eligibility veto
- * plus a graded fit score, so rules rank jobs instead of silently discarding
- * them. No I/O; resume-aware scoring belongs to JobMatcher.
+ * Evaluates a job against a user's preference rule (roles, skills, experience).
  */
 export class RuleEngine {
-  constructor(private readonly locations: LocationMatcher = new LocationMatcher()) {}
-
   evaluate(job: Job, rule: Rule | null): RuleEvaluation {
-    if (!rule || !rule.enabled) {
+    if (!ruleHasPreferences(rule)) {
       return {
         eligible: true,
         vetoReason: null,
         fitScore: 100,
         locationMatched: true,
         signals: [],
-        reasons: ['No active rule — treated as a neutral match'],
+        reasons: ['No preference rules — resume match only'],
+        applyRuleFit: false,
       };
     }
 
@@ -73,50 +68,10 @@ export class RuleEngine {
       ].join(' '),
     );
 
-    // Veto 1: an excluded role must appear in the *title*. Matching the
-    // description would discard engineering roles that merely mention a
-    // "product manager" stakeholder.
-    const excluded = rule.excludedRoles.find((role) =>
-      containsPhrase(title, role),
-    );
-    if (excluded) {
-      return {
-        eligible: false,
-        vetoReason: `Title contains excluded role "${excluded}"`,
-        fitScore: 0,
-        locationMatched: false,
-        signals: [],
-        reasons: [`Excluded role in title: ${excluded}`],
-      };
-    }
-
-    // Veto 2: an explicit company allow-list is an intentional hard filter.
-    if (rule.companies.length > 0) {
-      const allowed = rule.companies.some(
-        (name) => name.trim().toLowerCase() === job.company.trim().toLowerCase(),
-      );
-      if (!allowed) {
-        return {
-          eligible: false,
-          vetoReason: 'Company is not in the allow-list',
-          fitScore: 0,
-          locationMatched: false,
-          signals: [],
-          reasons: ['Company not in allow-list'],
-        };
-      }
-    }
-
-    const hasLocationRules =
-      rule.countries.length > 0 || rule.cities.length > 0;
-    const verdict = hasLocationRules
-      ? this.locations.match(job.location, rule.countries, rule.cities)
-      : { matched: true, detail: 'No location rules configured' };
-
     const signals: FitSignal[] = [];
 
-    if (rule.roles.length > 0) {
-      const variants = expandRoles(rule.roles);
+    if (rule!.roles.length > 0) {
+      const variants = expandRoles(rule!.roles);
       const hit = variants.find((variant) => containsPhrase(title, variant));
       signals.push({
         dimension: 'role',
@@ -128,46 +83,44 @@ export class RuleEngine {
       });
     }
 
-    if (rule.skills.length > 0) {
-      const hits = rule.skills.filter((skill) => containsTerm(haystack, skill));
+    if (rule!.skills.length > 0) {
+      const hits = rule!.skills.filter((skill) => containsTerm(haystack, skill));
       signals.push({
         dimension: 'skills',
-        // Partial credit — one of three required skills is a weak but real signal.
-        earned: hits.length / rule.skills.length,
+        earned: hits.length / rule!.skills.length,
         weight: DIMENSION_WEIGHTS.skills,
         detail:
           hits.length > 0
             ? `Skills matched: ${hits.join(', ')}`
-            : 'None of the required skills found',
+            : 'None of the preferred skills found',
       });
     }
 
-    const reasons = [verdict.detail, ...signals.map((signal) => signal.detail)];
-
-    if (rule.experience) {
-      reasons.push(
-        containsTerm(haystack, rule.experience)
-          ? `Experience hint matched: ${rule.experience}`
-          : 'Experience hint not found (non-blocking)',
-      );
+    if (rule!.experience?.trim()) {
+      const hint = rule!.experience.trim();
+      const matched = containsTerm(haystack, hint);
+      signals.push({
+        dimension: 'experience',
+        earned: matched ? 1 : 0,
+        weight: DIMENSION_WEIGHTS.experience,
+        detail: matched
+          ? `Experience hint matched: ${hint}`
+          : `Experience hint not found: ${hint}`,
+      });
     }
 
     return {
       eligible: true,
       vetoReason: null,
       fitScore: computeFitScore(signals),
-      locationMatched: verdict.matched,
+      locationMatched: true,
       signals,
-      reasons,
+      reasons: signals.map((signal) => signal.detail),
+      applyRuleFit: true,
     };
   }
 }
 
-/**
- * Weighted average over configured dimensions only, so a rule that sets just
- * skills is not penalized for leaving roles blank. With nothing configured
- * every job is a neutral 100 and location alone decides fit.
- */
 function computeFitScore(signals: FitSignal[]): number {
   if (signals.length === 0) {
     return 100;

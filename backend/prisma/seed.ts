@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   DEFAULT_JOB_MATCH_PROMPT,
   DEFAULT_PROVIDERS,
+  FALLBACK_CRON_EXPRESSION,
   JOB_MATCH_PROMPT_NAME,
 } from '../src/shared/config/defaults.js';
 import {
@@ -28,39 +29,44 @@ async function seed(): Promise<void> {
     });
   }
 
-  const existingRule = await prisma.rule.findFirst({
-    where: { name: 'default' },
+  // Per-user preference rules for the legacy owner (optional defaults).
+  const defaultUser = await prisma.user.upsert({
+    where: { email: 'owner@localhost' },
+    create: {
+      id: 'legacy_default_user',
+      email: 'owner@localhost',
+      passwordHash:
+        '$2b$10$yOLAbH1ekbaVf4mp/kxlZupCghYNOK5wtexe5PVFOSlBY/jFLBFSC',
+      name: 'Owner',
+    },
+    update: {},
   });
 
-  if (!existingRule) {
-    await prisma.rule.create({
-      data: {
-        name: 'default',
-        countries: JSON.stringify(['India', 'Remote']),
-        cities: JSON.stringify(['Hyderabad', 'Bangalore', 'Pune', 'Remote']),
-        skills: JSON.stringify(['TypeScript', 'React', 'Node.js']),
-        roles: JSON.stringify([
-          'Software Engineer',
-          'Backend Engineer',
-          'Full Stack',
-        ]),
-        excludedRoles: JSON.stringify(['Manager', 'Director', 'Intern']),
-        // Keyword fallback scores are typically lower than Gemini — 50 is V1 default.
-        minMatchScore: 50,
-        enabled: true,
-      },
-    });
-  } else {
-    await prisma.rule.update({
-      where: { id: existingRule.id },
-      data: { minMatchScore: 50 },
-    });
-  }
+  await prisma.rule.upsert({
+    where: { userId: defaultUser.id },
+    create: {
+      user: { connect: { id: defaultUser.id } },
+      skills: JSON.stringify(['TypeScript', 'React', 'Node.js']),
+      roles: JSON.stringify([
+        'Software Engineer',
+        'Backend Engineer',
+        'Full Stack',
+      ]),
+      experience: '2-4 years',
+      minMatchScore: 50,
+    },
+    update: {
+      minMatchScore: 50,
+    },
+  });
 
-  const existingResume = await prisma.resume.findFirst();
+  const existingResume = await prisma.resume.findUnique({
+    where: { userId: defaultUser.id },
+  });
   if (!existingResume) {
     await prisma.resume.create({
       data: {
+        user: { connect: { id: defaultUser.id } },
         extractedText:
           'Software Engineer with experience in TypeScript, React, and Node.js.',
         markdown:
@@ -179,9 +185,14 @@ async function seed(): Promise<void> {
     created += 1;
   }
 
+  const frequencySync = await prisma.company.updateMany({
+    where: { NOT: { frequency: FALLBACK_CRON_EXPRESSION } },
+    data: { frequency: FALLBACK_CRON_EXPRESSION },
+  });
+
   // eslint-disable-next-line no-console
   console.log(
-    `[seed] Target companies ready — created ${created}, updated ${updated}, unsupported ${UNSUPPORTED_TARGET_COMPANIES.length}.`,
+    `[seed] Target companies ready — created ${created}, updated ${updated}, unsupported ${UNSUPPORTED_TARGET_COMPANIES.length}, frequency synced ${frequencySync.count}.`,
   );
 }
 

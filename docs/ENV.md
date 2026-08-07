@@ -44,8 +44,10 @@ Channels: `logger` (app), `logger.cron`, `logger.provider`, `logger.telegram`. E
 
 | Variable | Description |
 |----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Bot token |
-| `TELEGRAM_CHAT_ID` | Destination chat |
+| `TELEGRAM_BOT_TOKEN` | Shared bot token (required to send alerts) |
+| `TELEGRAM_CHAT_ID` | Optional Dev Tools fallback when the signed-in user has not linked yet |
+
+Each user links their own chat in **Settings → Connect Telegram** (`t.me/<bot>?start=<token>`). Alerts are sent per user to that chat id.
 
 ## Playwright
 

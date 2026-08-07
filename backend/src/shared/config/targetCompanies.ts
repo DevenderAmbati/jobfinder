@@ -45,10 +45,8 @@ export interface UnsupportedTargetCompany {
   reason: string;
 }
 
-/** Slower cadence — these boards are large and detail fetches are expensive. */
-const WORKDAY_FREQUENCY = '0 */12 * * *';
-/** Product boards (Greenhouse) are smaller and India-heavy. */
-const PRODUCT_FREQUENCY = FALLBACK_CRON_EXPRESSION;
+/** Fixed schedule for every monitored company — not editable in the UI. */
+const DEFAULT_COMPANY_FREQUENCY = FALLBACK_CRON_EXPRESSION;
 
 /**
  * Verified live against the public ATS APIs on 2026-08-05.
@@ -63,7 +61,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://jobs.careers.microsoft.com/global/en/search?q=software%20engineer&lc=India&l=en_us&pg=1&pgSz=20&o=Relevance&flt=true',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Adobe',
@@ -71,7 +69,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://adobe.wd5.myworkdayjobs.com/external_experienced',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Salesforce',
@@ -80,7 +78,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://salesforce.wd12.myworkdayjobs.com/External_Career_Site',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Cisco',
@@ -88,7 +86,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://cisco.wd5.myworkdayjobs.com/Cisco_Careers',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Dell Technologies',
@@ -96,7 +94,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://dell.wd1.myworkdayjobs.com/External',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Visa',
@@ -104,7 +102,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://visa.wd5.myworkdayjobs.com/Visa',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Mastercard',
@@ -112,7 +110,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://mastercard.wd1.myworkdayjobs.com/CorporateCareers',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'American Express',
@@ -121,7 +119,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://aexp.eightfold.ai/careers?domain=aexp.com&location=India',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Oracle OCI',
@@ -130,7 +128,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1?country=IN&locationId=300000000106581&keyword=Software',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
 
   // ── Tier 2 ──────────────────────────────────────────────────────────────
@@ -140,7 +138,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/razorpaysoftwareprivatelimited',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'PhonePe',
@@ -148,7 +146,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/phonepe',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Postman',
@@ -156,7 +154,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/postman',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'InMobi',
@@ -164,7 +162,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/inmobi',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Freshworks',
@@ -172,7 +170,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'smartrecruiters',
     careerUrl: 'https://careers.smartrecruiters.com/Freshworks?country=in',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Zoho',
@@ -180,7 +178,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'custom',
     careerUrl: 'https://www.zoho.com/careers/',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Zerodha',
@@ -188,7 +186,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'custom',
     careerUrl: 'https://careers.zerodha.com',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
 
   // ── Tier 3 ──────────────────────────────────────────────────────────────
@@ -198,7 +196,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/observeai',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Sarvam AI',
@@ -206,7 +204,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'ashby',
     careerUrl: 'https://jobs.ashbyhq.com/sarvam',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Eightfold AI',
@@ -215,7 +213,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://app.eightfold.ai/careers?domain=eightfold.ai',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Gnani.ai',
@@ -223,7 +221,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'custom',
     careerUrl: 'https://careers.gnani.ai',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
 
   // ── Tier 4 ──────────────────────────────────────────────────────────────
@@ -234,7 +232,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Intel',
@@ -242,7 +240,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://intel.wd1.myworkdayjobs.com/External',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     // Large India board (~560). Starts disabled — enable + Fetch when ready.
@@ -251,7 +249,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'smartrecruiters',
     careerUrl: 'https://careers.smartrecruiters.com/BoschGroup?country=in',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Siemens',
@@ -260,7 +258,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://jobs.siemens.com/en_US/externaljobs/SearchJobs/?keywords=India',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'SAP Labs',
@@ -268,7 +266,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'sap',
     careerUrl: 'https://jobs.sap.com/search/?locationsearch=India',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Philips',
@@ -277,7 +275,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://www.careers.philips.com/global/en/search-results?keywords=&location=India',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'ServiceNow',
@@ -285,7 +283,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'custom',
     careerUrl: 'https://careers.servicenow.com/jobs/',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
 
   // ── Extended (verified boards on existing providers) ─────────────────────
@@ -295,7 +293,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/datadog',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Figma',
@@ -303,7 +301,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/figma',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Discord',
@@ -311,7 +309,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/discord',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Stripe',
@@ -319,7 +317,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/stripe',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Airbnb',
@@ -327,7 +325,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/airbnb',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Groww',
@@ -335,7 +333,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/groww',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Coinbase',
@@ -343,7 +341,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/coinbase',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Cloudflare',
@@ -351,7 +349,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/cloudflare',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Twilio',
@@ -359,7 +357,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/twilio',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Dropbox',
@@ -367,7 +365,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/dropbox',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Robinhood',
@@ -375,7 +373,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'greenhouse',
     careerUrl: 'https://boards.greenhouse.io/robinhood',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Notion',
@@ -383,7 +381,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'ashby',
     careerUrl: 'https://jobs.ashbyhq.com/notion',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Ramp',
@@ -391,7 +389,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'ashby',
     careerUrl: 'https://jobs.ashbyhq.com/ramp',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Linear',
@@ -399,7 +397,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'ashby',
     careerUrl: 'https://jobs.ashbyhq.com/linear',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'OpenAI',
@@ -407,7 +405,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'ashby',
     careerUrl: 'https://jobs.ashbyhq.com/openai',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Autodesk',
@@ -415,7 +413,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://autodesk.wd1.myworkdayjobs.com/Ext',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Broadcom',
@@ -423,7 +421,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://broadcom.wd1.myworkdayjobs.com/External_Career',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'BrowserStack',
@@ -431,7 +429,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'custom',
     careerUrl: 'https://www.browserstack.com/careers',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Chargebee',
@@ -439,7 +437,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'custom',
     careerUrl: 'https://www.chargebee.com/careers/',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'BlackRock',
@@ -448,7 +446,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://blackrock.wd1.myworkdayjobs.com/BlackRock_Professional',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Wells Fargo',
@@ -456,7 +454,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://wf.wd1.myworkdayjobs.com/WellsFargoJobs',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Morgan Stanley',
@@ -464,7 +462,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'workday',
     careerUrl: 'https://ms.wd5.myworkdayjobs.com/External',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Texas Instruments',
@@ -473,7 +471,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://edbz.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX?country=IN',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Ford',
@@ -481,7 +479,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'custom',
     careerUrl: 'https://www.careers.ford.com/search-jobs',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Paytm',
@@ -489,7 +487,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'lever',
     careerUrl: 'https://jobs.lever.co/paytm',
     enabled: true,
-    frequency: PRODUCT_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'JP Morgan',
@@ -498,7 +496,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001?country=IN&keyword=Software',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Qualcomm',
@@ -507,7 +505,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     careerUrl:
       'https://careers.qualcomm.com/careers?domain=qualcomm.com&location=India',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
   {
     name: 'Goldman Sachs',
@@ -515,7 +513,7 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     provider: 'goldman',
     careerUrl: 'https://higher.gs.com/?query=software&location=India',
     enabled: true,
-    frequency: WORKDAY_FREQUENCY,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
   },
 ];
 

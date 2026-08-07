@@ -1,4 +1,4 @@
-// V1 persistence schema — PostgreSQL (production).
+// Persistence schema — PostgreSQL.
 
 generator client {
   provider = "prisma-client-js"
@@ -30,6 +30,25 @@ enum MatchSource {
   KEYWORD
 }
 
+model User {
+  id                String            @id @default(cuid())
+  email             String            @unique
+  passwordHash      String
+  name              String?
+  /// Telegram destination after the user links via the bot deep-link.
+  telegramChatId    String?           @unique
+  /// One-time /start payload used to bind chat id → this account.
+  telegramLinkToken String?           @unique
+  telegramLinkedAt  DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  resume            Resume?
+  rule              Rule?
+  matches           JobMatch[]
+  applications      Application[]
+  notifications     NotificationLog[]
+}
+
 model Company {
   id           String        @id @default(cuid())
   name         String
@@ -44,51 +63,67 @@ model Company {
   providerLogs ProviderLog[]
 }
 
+/// Shared job listing. Match scores live on JobMatch (per user), not here.
 model Job {
-  id                  String             @id @default(cuid())
-  companyId           String
-  company             Company            @relation(fields: [companyId], references: [id])
-  title               String
-  location            String?
-  description         String?
-  experience          String?
-  skills              String?
-  salary              String?
-  postedDate          DateTime?
-  applyUrl            String
-  provider            String
-  dedupHash           String             @unique
-  matchScore          Float?
+  id            String             @id @default(cuid())
+  companyId     String
+  company       Company            @relation(fields: [companyId], references: [id])
+  title         String
+  location      String?
+  description   String?
+  experience    String?
+  skills        String?
+  salary        String?
+  postedDate    DateTime?
+  applyUrl      String
+  provider      String
+  dedupHash     String             @unique
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  matches       JobMatch[]
+  applications  Application[]
+  notifications NotificationLog[]
+}
+
+/// Per-user resume↔job score. Companies/jobs are shared; scores are not.
+model JobMatch {
+  id                  String       @id @default(cuid())
+  userId              String
+  user                User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId               String
+  job                 Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  matchScore          Float
   matchReasons        String?
   missingSkills       String?
   interviewDifficulty String?
   salaryEstimate      String?
   recommendation      String?
   matchSource         MatchSource?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  application         Application?
-  notifications       NotificationLog[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@unique([userId, jobId])
+  @@index([userId, matchScore])
 }
 
+/// Per-user matching preferences. Empty skills/roles/experience → resume-only scoring.
 model Rule {
   id            String   @id @default(cuid())
-  name          String   @default("default")
-  countries     String?
-  cities        String?
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   experience    String?
   skills        String?
   roles         String?
-  excludedRoles String?
-  companies     String?
-  minMatchScore Float    @default(80)
-  enabled       Boolean  @default(true)
+  /// Notify / APPLY threshold for this user's match scores.
+  minMatchScore Float    @default(50)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
 
 model Resume {
   id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   originalPdfPath String?
   extractedText   String
   markdown        String
@@ -100,23 +135,33 @@ model Resume {
 
 model Application {
   id        String            @id @default(cuid())
-  jobId     String            @unique
-  job       Job               @relation(fields: [jobId], references: [id])
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
   status    ApplicationStatus @default(SAVED)
   notes     String?
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
+
+  @@unique([userId, jobId])
+  @@index([userId])
 }
 
 model NotificationLog {
   id        String   @id @default(cuid())
   jobId     String
   job       Job      @relation(fields: [jobId], references: [id])
+  /// Recipient account — null for legacy / synthetic notifications.
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   channel   String   @default("telegram")
   success   Boolean
   payload   String?
   error     String?
   createdAt DateTime @default(now())
+
+  @@index([userId, jobId])
 }
 
 model ProviderLog {

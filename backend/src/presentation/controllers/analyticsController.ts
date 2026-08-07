@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { AppContainer } from '../../infrastructure/di/container.js';
+import { requireUserId } from '../middleware/authMiddleware.js';
 
 function startOfUtcDay(date = new Date()): Date {
   return new Date(
@@ -10,13 +11,14 @@ function startOfUtcDay(date = new Date()): Date {
 export function createAnalyticsController(container: AppContainer) {
   return {
     async summary(
-      _req: Request,
+      req: Request,
       res: Response,
       next: NextFunction,
     ): Promise<void> {
       try {
+        const userId = requireUserId(req);
         const todayStart = startOfUtcDay();
-        const rule = await container.rules.findActive();
+        const rule = await container.rules.findByUserId(userId);
         const minScore =
           rule?.minMatchScore ?? container.config.matchScoreThreshold;
 
@@ -39,15 +41,24 @@ export function createAnalyticsController(container: AppContainer) {
             where: { startTime: { gte: todayStart } },
             _sum: { jobsFound: true },
           }),
-          container.prisma.job.count({
-            where: { matchScore: { gte: minScore } },
+          container.prisma.jobMatch.count({
+            where: { userId, matchScore: { gte: minScore } },
           }),
           container.prisma.job.count({
             where: {
               OR: [
-                { recommendation: 'SKIP' },
-                { matchScore: { lt: minScore } },
-                { matchScore: null },
+                { matches: { none: { userId } } },
+                {
+                  matches: {
+                    some: {
+                      userId,
+                      OR: [
+                        { recommendation: 'SKIP' },
+                        { matchScore: { lt: minScore } },
+                      ],
+                    },
+                  },
+                },
               ],
             },
           }),
@@ -60,6 +71,7 @@ export function createAnalyticsController(container: AppContainer) {
           }),
           container.prisma.application.groupBy({
             by: ['status'],
+            where: { userId },
             _count: { _all: true },
           }),
         ]);

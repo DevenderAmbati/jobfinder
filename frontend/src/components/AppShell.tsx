@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
+import { canAccessDevTools } from '../lib/devAccess';
 
-const links = [
+const baseLinks = [
   { to: '/jobs', label: 'Jobs' },
   { to: '/companies', label: 'Companies' },
   { to: '/providers/health', label: 'Providers' },
@@ -10,13 +12,17 @@ const links = [
   { to: '/applications', label: 'Applications' },
   { to: '/settings', label: 'Settings' },
   { to: '/analytics', label: 'Analytics' },
-  { to: '/dev', label: 'Dev' },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
+  const { user, logout } = useAuth();
+  const showDev = canAccessDevTools(user?.email);
+  const links = showDev
+    ? [...baseLinks, { to: '/dev', label: 'Dev' } as const]
+    : baseLinks;
 
   useEffect(() => {
     setMenuOpen(false);
@@ -86,6 +92,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
         </nav>
+        <div className="app-account">
+          <p className="app-account__email" title={user?.email}>
+            {user?.email}
+          </p>
+          <button type="button" className="app-account__logout" onClick={logout}>
+            Sign out
+          </button>
+        </div>
       </aside>
 
       <main className="app-main" ref={mainRef}>

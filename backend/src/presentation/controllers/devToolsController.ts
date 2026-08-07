@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { AppContainer } from '../../infrastructure/di/container.js';
 import { AppError } from '../../shared/errors/AppError.js';
+import { requireUserId } from '../middleware/authMiddleware.js';
 
 function readStringParam(
   value: string | string[] | undefined,
@@ -47,6 +48,7 @@ export function createDevToolsController(container: AppContainer) {
 
     async rescoreJobs(req: Request, res: Response, next: NextFunction) {
       try {
+        const userId = requireUserId(req);
         const limitRaw: unknown = req.body?.limit;
         const limit = typeof limitRaw === 'number' ? limitRaw : undefined;
         if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
@@ -57,6 +59,7 @@ export function createDevToolsController(container: AppContainer) {
           );
         }
         const result = await dev.rescoreJobs({
+          userId,
           onlyUnscored: req.body?.onlyUnscored === true,
           limit,
         });
@@ -66,18 +69,22 @@ export function createDevToolsController(container: AppContainer) {
       }
     },
 
-    async testTelegram(_req: Request, res: Response, next: NextFunction) {
+    async testTelegram(req: Request, res: Response, next: NextFunction) {
       try {
-        const result = await dev.testTelegram();
+        const userId = requireUserId(req);
+        const chatId = await container.users.getTelegramChatId(userId);
+        const result = await dev.testTelegram(
+          chatId ?? (container.config.telegramChatId || undefined),
+        );
         res.status(200).json({ data: result });
       } catch (error) {
         next(error);
       }
     },
 
-    async testGemini(_req: Request, res: Response, next: NextFunction) {
+    async testGemini(req: Request, res: Response, next: NextFunction) {
       try {
-        const result = await dev.testGemini();
+        const result = await dev.testGemini(requireUserId(req));
         res.status(200).json({ data: result });
       } catch (error) {
         next(error);
@@ -124,7 +131,7 @@ export function createDevToolsController(container: AppContainer) {
         if (!id) {
           throw new AppError('VALIDATION_ERROR', 'job id required', 400);
         }
-        const result = await dev.ruleEvaluation(id);
+        const result = await dev.ruleEvaluation(id, requireUserId(req));
         res.status(200).json({ data: result });
       } catch (error) {
         next(error);
@@ -137,7 +144,7 @@ export function createDevToolsController(container: AppContainer) {
         if (!id) {
           throw new AppError('VALIDATION_ERROR', 'job id required', 400);
         }
-        const result = await dev.aiOutput(id);
+        const result = await dev.aiOutput(id, requireUserId(req));
         res.status(200).json({ data: result });
       } catch (error) {
         next(error);

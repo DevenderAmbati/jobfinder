@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDevToolsGuard } from './devToolsGuard.js';
+import { createDevToolsGuard, DEV_TOOLS_EMAIL } from './devToolsGuard.js';
 import type { AppConfig } from '../../shared/config/env.js';
 import { AppError } from '../../shared/errors/AppError.js';
 
@@ -28,24 +28,39 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     rateLimitMax: 300,
     rateLimitFetchMax: 30,
     requestLogging: true,
+    jwtSecret: 'test-jwt-secret',
     ...overrides,
   };
 }
 
+function authedReq(email: string) {
+  return { userEmail: email, userId: 'u1' } as never;
+}
+
 describe('createDevToolsGuard', () => {
-  it('allows requests when enabled', () => {
+  it('allows the owner account when enabled', () => {
     const guard = createDevToolsGuard(baseConfig({ enableDevTools: true }));
     let called = false;
-    guard({} as never, {} as never, () => {
+    guard(authedReq(DEV_TOOLS_EMAIL), {} as never, () => {
       called = true;
     });
     expect(called).toBe(true);
   });
 
+  it('rejects other accounts even when enabled', () => {
+    const guard = createDevToolsGuard(baseConfig({ enableDevTools: true }));
+    let error: unknown;
+    guard(authedReq('other@example.com'), {} as never, (err) => {
+      error = err;
+    });
+    expect(error).toBeInstanceOf(AppError);
+    expect((error as AppError).statusCode).toBe(403);
+  });
+
   it('rejects when disabled', () => {
     const guard = createDevToolsGuard(baseConfig({ enableDevTools: false }));
     let error: unknown;
-    guard({} as never, {} as never, (err) => {
+    guard(authedReq(DEV_TOOLS_EMAIL), {} as never, (err) => {
       error = err;
     });
     expect(error).toBeInstanceOf(AppError);

@@ -35,9 +35,9 @@ const emptyForm = {
   name: '',
   provider: 'stub',
   careerUrl: '',
-  frequency: '0 */6 * * *',
-  enabled: true,
 };
+
+const FIXED_FREQUENCY_LABEL = 'Every 6 hours';
 
 export function CompaniesPage() {
   const queryClient = useQueryClient();
@@ -80,26 +80,11 @@ export function CompaniesPage() {
     mutationFn: async () =>
       api<{ data: Company }>('/companies', {
         method: 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, enabled: true }),
       }),
     onSuccess: () => {
       setForm(emptyForm);
       setMessage('Company created.');
-      void queryClient.invalidateQueries({ queryKey: ['companies'] });
-    },
-    onError: (error: Error) => setMessage(error.message),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async (input: {
-      id: string;
-      patch: Partial<Pick<Company, 'enabled' | 'frequency' | 'careerUrl' | 'name'>>;
-    }) =>
-      api<{ data: Company }>(`/companies/${input.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(input.patch),
-      }),
-    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['companies'] });
     },
     onError: (error: Error) => setMessage(error.message),
@@ -140,7 +125,7 @@ export function CompaniesPage() {
     <section className="page">
       <PageHeader
         title="Companies"
-        description="Manage monitored companies, providers, and schedule frequency."
+        description="Manage monitored companies and providers. Fetch schedule is fixed at every 6 hours."
       />
 
       <form
@@ -184,24 +169,14 @@ export function CompaniesPage() {
           />
         </label>
         <label className="field">
-          <span className="field__label">Cron frequency</span>
+          <span className="field__label">Fetch schedule</span>
           <input
             className="input"
-            value={form.frequency}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, frequency: e.target.value }))
-            }
+            value={FIXED_FREQUENCY_LABEL}
+            disabled
+            readOnly
+            aria-readonly="true"
           />
-        </label>
-        <label className="checkbox-row" style={{ alignSelf: 'end', paddingBottom: '0.55rem' }}>
-          <input
-            type="checkbox"
-            checked={form.enabled}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, enabled: e.target.checked }))
-            }
-          />
-          Enabled
         </label>
         <div className="span-2">
           <Button
@@ -243,7 +218,6 @@ export function CompaniesPage() {
                   <th>Name</th>
                   <th>Provider</th>
                   <th>Frequency</th>
-                  <th>Enabled</th>
                   <th>Last run</th>
                   <th>Actions</th>
                 </tr>
@@ -251,9 +225,6 @@ export function CompaniesPage() {
               <tbody>
                 {pagination.pageItems.map((company) => {
                   const fetching = fetchingIds.includes(company.id);
-                  const updating =
-                    updateMutation.isPending &&
-                    updateMutation.variables?.id === company.id;
                   return (
                   <tr key={company.id}>
                     <td>
@@ -269,33 +240,9 @@ export function CompaniesPage() {
                     </td>
                     <td>{company.provider}</td>
                     <td>
-                      <input
-                        className="input input--sm"
-                        defaultValue={company.frequency}
-                        onBlur={(e) => {
-                          if (e.target.value !== company.frequency) {
-                            updateMutation.mutate({
-                              id: company.id,
-                              patch: { frequency: e.target.value },
-                            });
-                          }
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="link"
-                        disabled={updating}
-                        onClick={() =>
-                          updateMutation.mutate({
-                            id: company.id,
-                            patch: { enabled: !company.enabled },
-                          })
-                        }
-                      >
-                        {company.enabled ? 'On' : 'Off'}
-                      </button>
+                      <span className="cell-meta" style={{ marginTop: 0 }}>
+                        {FIXED_FREQUENCY_LABEL}
+                      </span>
                     </td>
                     <td className="cell-meta" style={{ marginTop: 0 }}>
                       {company.lastRun
@@ -313,10 +260,11 @@ export function CompaniesPage() {
                       </Button>
                     </td>
                   </tr>
-                )})}
+                  );
+                })}
                 {pagination.total === 0 ? (
                   <tr>
-                    <td colSpan={6} className="empty">
+                    <td colSpan={5} className="empty">
                       {search.trim()
                         ? 'No companies match your search.'
                         : 'No companies yet. Add one above.'}

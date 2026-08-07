@@ -1,7 +1,6 @@
 import type { AppConfig } from '../../shared/config/env.js';
 import { JobDeduplicationService } from '../../domain/services/JobDeduplicationService.js';
 import { RuleEngine } from '../../domain/services/RuleEngine.js';
-import { LocationMatcher } from '../../domain/services/LocationMatcher.js';
 import { RelevanceScorer } from '../../domain/services/RelevanceScorer.js';
 import type { CompanyRepository } from '../../domain/repositories/CompanyRepository.js';
 import type { JobRepository } from '../../domain/repositories/JobRepository.js';
@@ -11,6 +10,7 @@ import type { PromptTemplateRepository } from '../../domain/repositories/PromptT
 import type { ProviderHealthRepository } from '../../domain/repositories/ProviderHealthRepository.js';
 import type { LogRepository } from '../../domain/repositories/LogRepository.js';
 import type { ApplicationRepository } from '../../domain/repositories/ApplicationRepository.js';
+import type { UserRepository } from '../../domain/repositories/UserRepository.js';
 import type { JobQueue } from '../../domain/ports/JobQueue.js';
 import type { JobMatcher } from '../../domain/ports/JobMatcher.js';
 import type { Notifier } from '../../domain/ports/Notifier.js';
@@ -19,11 +19,14 @@ import { PrismaCompanyRepository } from '../database/PrismaCompanyRepository.js'
 import { PrismaJobRepository } from '../database/PrismaJobRepository.js';
 import { PrismaRuleRepository } from '../database/PrismaRuleRepository.js';
 import { PrismaResumeRepository } from '../database/PrismaResumeRepository.js';
+import { PrismaUserRepository } from '../database/PrismaUserRepository.js';
 import { PrismaPromptTemplateRepository } from '../database/PrismaPromptTemplateRepository.js';
 import { PrismaProviderHealthRepository } from '../database/PrismaProviderHealthRepository.js';
 import { PrismaLogRepository } from '../database/PrismaLogRepository.js';
 import { PrismaApplicationRepository } from '../database/PrismaApplicationRepository.js';
 import { prisma } from '../database/prismaClient.js';
+import { AuthService } from '../../application/services/AuthService.js';
+import { TelegramLinkService } from '../../application/services/TelegramLinkService.js';
 import { ProviderRegistry } from '../providers/ProviderRegistry.js';
 import { StubProvider } from '../providers/StubProvider.js';
 import { GreenhouseProvider } from '../providers/greenhouse/GreenhouseProvider.js';
@@ -61,6 +64,9 @@ export interface AppContainer {
   config: AppConfig;
   prisma: typeof prisma;
   queue: JobQueue;
+  users: UserRepository;
+  auth: AuthService;
+  telegramLink: TelegramLinkService;
   companies: CompanyRepository;
   jobs: JobRepository;
   rules: RuleRepository;
@@ -90,6 +96,15 @@ export interface AppContainer {
  */
 export function createContainer(config: AppConfig): AppContainer {
   const queue = new InMemoryJobQueue();
+  const users = new PrismaUserRepository();
+  const auth = new AuthService({
+    users,
+    jwtSecret: config.jwtSecret,
+  });
+  const telegramLink = new TelegramLinkService({
+    botToken: config.telegramBotToken,
+    users,
+  });
   const companies = new PrismaCompanyRepository();
   const jobs = new PrismaJobRepository();
   const rules = new PrismaRuleRepository();
@@ -99,7 +114,7 @@ export function createContainer(config: AppConfig): AppContainer {
   const logs = new PrismaLogRepository();
   const applications = new PrismaApplicationRepository();
   const jobDeduplication = new JobDeduplicationService();
-  const ruleEngine = new RuleEngine(new LocationMatcher());
+  const ruleEngine = new RuleEngine();
   const relevance = new RelevanceScorer();
   const providers = new ProviderRegistry([
     new StubProvider(),
@@ -142,17 +157,16 @@ export function createContainer(config: AppConfig): AppContainer {
     escalationFitFloor: config.escalationFitFloor,
   });
 
-  const notifier =
-    config.telegramBotToken && config.telegramChatId
-      ? new TelegramNotifier({
-          botToken: config.telegramBotToken,
-          chatId: config.telegramChatId,
-        })
-      : new LoggingNotifier();
+  const notifier = config.telegramBotToken
+    ? new TelegramNotifier({
+        botToken: config.telegramBotToken,
+        defaultChatId: config.telegramChatId || undefined,
+      })
+    : new LoggingNotifier();
 
-  if (!(config.telegramBotToken && config.telegramChatId)) {
+  if (!config.telegramBotToken) {
     logger.warn(
-      'Telegram credentials missing — using LoggingNotifier (dry-run)',
+      'TELEGRAM_BOT_TOKEN missing — using LoggingNotifier (dry-run)',
     );
   }
 
@@ -161,6 +175,7 @@ export function createContainer(config: AppConfig): AppContainer {
     jobs,
     rules,
     resumes,
+    users,
     providerHealth,
     logs,
     providers,
@@ -215,17 +230,22 @@ export function createContainer(config: AppConfig): AppContainer {
       }
     });
     scheduler.start();
+    telegramLink.startPolling();
   };
 
   const stopWorkers = (): void => {
     scheduler.stop();
     queue.stop();
+    void telegramLink.stopPolling();
   };
 
   return {
     config,
     prisma,
     queue,
+    users,
+    auth,
+    telegramLink,
     companies,
     jobs,
     rules,

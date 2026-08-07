@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { AppContainer } from '../../infrastructure/di/container.js';
+import { FALLBACK_CRON_EXPRESSION } from '../../shared/config/defaults.js';
 import { AppError } from '../../shared/errors/AppError.js';
 
 function readId(value: string | string[] | undefined): string | undefined {
@@ -22,12 +23,11 @@ export function createCompanyController(container: AppContainer) {
 
     async create(req: Request, res: Response, next: NextFunction): Promise<void> {
       try {
-        const { name, provider, careerUrl, enabled, frequency } = req.body as {
+        const { name, provider, careerUrl, enabled } = req.body as {
           name?: string;
           provider?: string;
           careerUrl?: string;
           enabled?: boolean;
-          frequency?: string;
         };
 
         if (!name || !provider || !careerUrl) {
@@ -45,7 +45,7 @@ export function createCompanyController(container: AppContainer) {
           provider,
           careerUrl,
           enabled,
-          frequency,
+          frequency: FALLBACK_CRON_EXPRESSION,
         });
         res.status(201).json({ data: company });
       } catch (error) {
@@ -60,12 +60,11 @@ export function createCompanyController(container: AppContainer) {
           throw new AppError('VALIDATION_ERROR', 'Company id required', 400);
         }
 
-        const { name, provider, careerUrl, enabled, frequency } = req.body as {
+        const { name, provider, careerUrl, enabled } = req.body as {
           name?: string;
           provider?: string;
           careerUrl?: string;
           enabled?: boolean;
-          frequency?: string;
         };
 
         if (provider) {
@@ -77,7 +76,6 @@ export function createCompanyController(container: AppContainer) {
           provider,
           careerUrl,
           enabled,
-          frequency,
         });
         res.status(200).json({ data: company });
       } catch (error) {

@@ -13,6 +13,7 @@ export interface ProviderLog {
 export interface NotificationLog {
   id: string;
   jobId: string;
+  userId: string | null;
   channel: string;
   success: boolean;
   payload: string | null;

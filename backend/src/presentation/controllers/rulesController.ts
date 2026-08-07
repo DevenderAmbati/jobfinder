@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { AppContainer } from '../../infrastructure/di/container.js';
 import { AppError } from '../../shared/errors/AppError.js';
+import { requireUserId } from '../middleware/authMiddleware.js';
 
 function parseCsv(value: unknown): string[] | undefined {
   if (value === undefined) {
@@ -20,9 +21,10 @@ function parseCsv(value: unknown): string[] | undefined {
 
 export function createRulesController(container: AppContainer) {
   return {
-    async get(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    async get(req: Request, res: Response, next: NextFunction): Promise<void> {
       try {
-        const rule = await container.rules.findActive();
+        const userId = requireUserId(req);
+        const rule = await container.rules.findByUserId(userId);
         res.status(200).json({ data: rule });
       } catch (error) {
         next(error);
@@ -31,6 +33,7 @@ export function createRulesController(container: AppContainer) {
 
     async put(req: Request, res: Response, next: NextFunction): Promise<void> {
       try {
+        const userId = requireUserId(req);
         const body = req.body as Record<string, unknown>;
         const minMatchScore =
           typeof body.minMatchScore === 'number'
@@ -52,10 +55,7 @@ export function createRulesController(container: AppContainer) {
           );
         }
 
-        const rule = await container.rules.upsertDefault({
-          name: typeof body.name === 'string' ? body.name : undefined,
-          countries: parseCsv(body.countries),
-          cities: parseCsv(body.cities),
+        const rule = await container.rules.upsertForUser(userId, {
           experience:
             body.experience === null
               ? null
@@ -64,12 +64,13 @@ export function createRulesController(container: AppContainer) {
                 : undefined,
           skills: parseCsv(body.skills),
           roles: parseCsv(body.roles),
-          excludedRoles: parseCsv(body.excludedRoles),
-          companies: parseCsv(body.companies),
           minMatchScore,
-          enabled:
-            typeof body.enabled === 'boolean' ? body.enabled : undefined,
         });
+
+        // Preferences changed — refresh this user's JobMatch scores.
+        void container.rescoreJobs
+          .execute({ userId })
+          .catch(() => undefined);
 
         res.status(200).json({ data: rule });
       } catch (error) {

@@ -41,6 +41,7 @@ export class PrismaLogRepository implements LogRepository {
     const row = await prisma.notificationLog.create({
       data: {
         jobId: input.jobId,
+        userId: input.userId ?? null,
         channel: input.channel ?? 'telegram',
         success: input.success,
         payload: input.payload ?? null,
@@ -53,9 +54,15 @@ export class PrismaLogRepository implements LogRepository {
   async hasSuccessfulNotification(
     jobId: string,
     channel = 'telegram',
+    userId?: string | null,
   ): Promise<boolean> {
     const count = await prisma.notificationLog.count({
-      where: { jobId, channel, success: true },
+      where: {
+        jobId,
+        channel,
+        success: true,
+        ...(userId ? { userId } : {}),
+      },
     });
     return count > 0;
   }

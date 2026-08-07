@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
-import { Button } from '../components/Button';
 import { LoadingState } from '../components/LoadingState';
 import { Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
@@ -11,8 +10,8 @@ import {
   api,
   type ApplicationItem,
   type ApplicationStatus,
-  type JobListItem,
 } from '../lib/api';
+import { extractExternalJobId } from '../lib/jobFormat';
 
 const STATUSES: ApplicationStatus[] = [
   'SAVED',
@@ -23,21 +22,36 @@ const STATUSES: ApplicationStatus[] = [
   'JOINED',
 ];
 
-const STATUS_OPTIONS = STATUSES.map((status) => ({
-  value: status,
-  label: status,
-}));
+const STATUS_LABELS: Record<ApplicationStatus, string> = {
+  SAVED: 'Bookmarked',
+  APPLIED: 'Applied',
+  INTERVIEW: 'Interview',
+  REJECTED: 'Rejected',
+  OFFER: 'Offer',
+  JOINED: 'Joined',
+};
+
+const CLEAR_VALUE = 'CLEAR';
+
+const STATUS_OPTIONS = [
+  ...STATUSES.map((status) => ({
+    value: status,
+    label: STATUS_LABELS[status],
+  })),
+  { value: CLEAR_VALUE, label: 'Clear' },
+];
 
 const STATUS_FILTER_OPTIONS = [
   { value: '', label: 'All' },
-  ...STATUS_OPTIONS,
+  ...STATUSES.map((status) => ({
+    value: status,
+    label: STATUS_LABELS[status],
+  })),
 ];
 
 export function ApplicationsPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('');
-  const [jobId, setJobId] = useState('');
-  const [notes, setNotes] = useState('');
   const [message, setMessage] = useState<string | null>(null);
 
   const applicationsQuery = useQuery({
@@ -49,59 +63,37 @@ export function ApplicationsPage() {
     },
   });
 
-  const jobsQuery = useQuery({
-    queryKey: ['jobs', 'for-applications'],
-    queryFn: async () => {
-      const res = await api<{ data: JobListItem[] }>('/jobs?limit=200');
-      return res.data;
-    },
-  });
+  const invalidateApplications = () => {
+    void queryClient.invalidateQueries({ queryKey: ['applications'] });
+  };
 
-  const trackedJobIds = useMemo(
-    () => new Set((applicationsQuery.data ?? []).map((app) => app.jobId)),
-    [applicationsQuery.data],
-  );
-
-  const availableJobs = useMemo(
-    () => (jobsQuery.data ?? []).filter((job) => job.id && !trackedJobIds.has(job.id)),
-    [jobsQuery.data, trackedJobIds],
-  );
-
-  const createMutation = useMutation({
-    mutationFn: async () =>
-      api<{ data: ApplicationItem }>('/applications', {
-        method: 'POST',
-        body: JSON.stringify({
-          jobId,
-          status: 'SAVED',
-          notes: notes.trim() || null,
-        }),
-      }),
-    onSuccess: () => {
-      setJobId('');
-      setNotes('');
-      setMessage('Application saved.');
-      void queryClient.invalidateQueries({ queryKey: ['applications'] });
-    },
-    onError: (error: Error) => setMessage(error.message),
-  });
-
-  const updateMutation = useMutation({
+  const statusMutation = useMutation({
     mutationFn: async (input: {
       id: string;
-      status: ApplicationStatus;
+      status: string;
       notes?: string | null;
-    }) =>
-      api<{ data: ApplicationItem }>(`/applications/${input.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: input.status,
-          notes: input.notes,
-        }),
-      }),
-    onSuccess: () => {
-      setMessage('Application updated.');
-      void queryClient.invalidateQueries({ queryKey: ['applications'] });
+    }) => {
+      if (input.status === CLEAR_VALUE || input.status === '__clear__') {
+        await api(`/applications/${input.id}`, { method: 'DELETE' });
+        return { cleared: true as const };
+      }
+      const res = await api<{ data: ApplicationItem }>(
+        `/applications/${input.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            status: input.status,
+            notes: input.notes,
+          }),
+        },
+      );
+      return { cleared: false as const, data: res.data };
+    },
+    onSuccess: (result) => {
+      setMessage(
+        result.cleared ? 'Application cleared.' : 'Application updated.',
+      );
+      invalidateApplications();
     },
     onError: (error: Error) => setMessage(error.message),
   });
@@ -118,55 +110,8 @@ export function ApplicationsPage() {
     <section className="page">
       <PageHeader
         title="Applications"
-        description="Track Saved → Applied → Interview → Offer → Joined."
+        description="Bookmarked and applied roles from the Jobs table."
       />
-
-      <form
-        className="section-block form-grid"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!jobId) {
-            setMessage('Select a job first.');
-            return;
-          }
-          createMutation.mutate();
-        }}
-      >
-        <h2 className="section-title span-2">Save a job</h2>
-        <label className="field span-2">
-          <span className="field__label">Job</span>
-          <Select
-            aria-label="Job"
-            value={jobId}
-            onChange={setJobId}
-            placeholder="Select job…"
-            options={[
-              { value: '', label: 'Select job…' },
-              ...availableJobs.map((job) => ({
-                value: job.id!,
-                label: `${job.title} — ${job.company}`,
-              })),
-            ]}
-          />
-        </label>
-        <label className="field span-2">
-          <span className="field__label">Notes</span>
-          <input
-            className="input"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </label>
-        <div className="span-2">
-          <Button
-            type="submit"
-            loading={createMutation.isPending}
-            loadingText="Saving…"
-          >
-            Add application
-          </Button>
-        </div>
-      </form>
 
       <label className="field" style={{ maxWidth: '16rem' }}>
         <span className="field__label">Filter by status</span>
@@ -192,6 +137,7 @@ export function ApplicationsPage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th>Job ID</th>
                   <th>Role</th>
                   <th>Company</th>
                   <th>Status</th>
@@ -202,6 +148,9 @@ export function ApplicationsPage() {
               <tbody>
                 {pagination.pageItems.map((app) => (
                   <tr key={app.id}>
+                    <td className="mono cell-meta">
+                      {extractExternalJobId(app.jobApplyUrl) ?? '—'}
+                    </td>
                     <td className="cell-strong">{app.jobTitle ?? app.jobId}</td>
                     <td>{app.jobCompany ?? '—'}</td>
                     <td>
@@ -209,13 +158,14 @@ export function ApplicationsPage() {
                         size="sm"
                         aria-label={`Status for ${app.jobTitle ?? app.jobId}`}
                         value={app.status}
-                        onChange={(status) =>
-                          updateMutation.mutate({
+                        disabled={statusMutation.isPending}
+                        onChange={(status) => {
+                          statusMutation.mutate({
                             id: app.id,
-                            status: status as ApplicationStatus,
+                            status,
                             notes: app.notes,
-                          })
-                        }
+                          });
+                        }}
                         options={STATUS_OPTIONS}
                       />
                     </td>
@@ -227,7 +177,7 @@ export function ApplicationsPage() {
                         onBlur={(e) => {
                           const next = e.target.value.trim() || null;
                           if (next !== (app.notes ?? null)) {
-                            updateMutation.mutate({
+                            statusMutation.mutate({
                               id: app.id,
                               status: app.status,
                               notes: next,
@@ -254,8 +204,8 @@ export function ApplicationsPage() {
                 ))}
                 {pagination.total === 0 ? (
                   <tr>
-                    <td colSpan={5} className="empty">
-                      No applications yet. Save a job above.
+                    <td colSpan={6} className="empty">
+                      No applications yet. Bookmark or mark applied from Jobs.
                     </td>
                   </tr>
                 ) : null}

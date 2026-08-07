@@ -8,6 +8,6 @@ export interface ResumeUpsertInput {
 }
 
 export interface ResumeRepository {
-  findCurrent(): Promise<Resume | null>;
-  upsertCurrent(input: ResumeUpsertInput): Promise<Resume>;
+  findCurrent(userId: string): Promise<Resume | null>;
+  upsertCurrent(userId: string, input: ResumeUpsertInput): Promise<Resume>;
 }

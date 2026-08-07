@@ -2,9 +2,11 @@ import type { CompanyRepository } from '../../domain/repositories/CompanyReposit
 import type { JobRepository } from '../../domain/repositories/JobRepository.js';
 import type { RuleRepository } from '../../domain/repositories/RuleRepository.js';
 import type { ResumeRepository } from '../../domain/repositories/ResumeRepository.js';
+import type { UserRepository } from '../../domain/repositories/UserRepository.js';
 import type { ProviderHealthRepository } from '../../domain/repositories/ProviderHealthRepository.js';
 import type { LogRepository } from '../../domain/repositories/LogRepository.js';
 import type { Notifier } from '../../domain/ports/Notifier.js';
+import type { MatchResult } from '../../domain/ports/JobMatcher.js';
 import { JobDeduplicationService } from '../../domain/services/JobDeduplicationService.js';
 import { MatchScore } from '../../domain/value-objects/MatchScore.js';
 import { resumeMatchText } from '../../domain/services/resumeText.js';
@@ -33,6 +35,7 @@ export interface FetchCompanyJobsDeps {
   jobs: JobRepository;
   rules: RuleRepository;
   resumes: ResumeRepository;
+  users: UserRepository;
   providerHealth: ProviderHealthRepository;
   logs: LogRepository;
   providers: ProviderRegistry;
@@ -79,9 +82,20 @@ export class FetchCompanyJobsUseCase {
       const fetched = await provider.fetchJobs(company);
       jobsFound = fetched.length;
 
-      const rule = await this.deps.rules.findActive();
-      const resume = await this.deps.resumes.findCurrent();
-      const resumeText = resumeMatchText(resume);
+      const userIds = await this.deps.users.listIdsWithResume();
+      const resumesByUser = new Map<string, string>();
+      const rulesByUser = new Map<
+        string,
+        Awaited<ReturnType<typeof this.deps.rules.findByUserId>>
+      >();
+      for (const userId of userIds) {
+        const resume = await this.deps.resumes.findCurrent(userId);
+        const text = resumeMatchText(resume);
+        if (text) {
+          resumesByUser.set(userId, text);
+          rulesByUser.set(userId, await this.deps.rules.findByUserId(userId));
+        }
+      }
 
       for (const raw of fetched) {
         const normalized = {
@@ -117,85 +131,115 @@ export class FetchCompanyJobsUseCase {
         });
         jobsAdded += 1;
 
-        if (!resumeText) {
-          logger.warn('No resume on file — skipping match/notify', {
-            jobId: saved.id,
-          });
-          continue;
-        }
-
-        const minScore = rule?.minMatchScore ?? this.deps.matchScoreThreshold;
-        const outcome = await this.deps.scoring.score(saved, rule, resumeText, {
-          allowEscalation: escalated < this.deps.maxEscalationsPerRun,
-          minScore,
-        });
-
-        if (!outcome.match) {
-          skippedByRules += 1;
-          logger.info('Job vetoed as ineligible', {
-            title: saved.title,
-            reason: outcome.evaluation.vetoReason,
-          });
-          continue;
-        }
-
-        if (outcome.escalated) {
-          escalated += 1;
-        }
-
-        if (saved.id) {
-          await this.deps.jobs.saveMatchResult(saved.id, outcome.match);
-          scored += 1;
-        }
-
-        const score = MatchScore.of(outcome.match.score);
-        if (!score.meetsThreshold(minScore)) {
-          continue;
-        }
-
         if (!saved.id) {
           continue;
         }
 
-        // Scoring every eligible job means far more jobs clear the threshold
-        // than before, so cap notifications rather than flood the channel.
-        if (notified >= this.deps.maxNotificationsPerRun) {
+        if (resumesByUser.size === 0) {
+          logger.warn('No user resumes on file — skipping match/notify', {
+            jobId: saved.id,
+          });
           continue;
         }
 
-        const alreadyNotified =
-          await this.deps.logs.hasSuccessfulNotification(saved.id);
-        if (alreadyNotified) {
+        const minScoreFallback = this.deps.matchScoreThreshold;
+        const notifyCandidates: Array<{ userId: string; match: MatchResult }> =
+          [];
+        let anyScored = false;
+        let vetoedForAll = true;
+
+        for (const [userId, resumeText] of resumesByUser) {
+          const rule = rulesByUser.get(userId) ?? null;
+          const minScore = rule?.minMatchScore ?? minScoreFallback;
+          const outcome = await this.deps.scoring.score(saved, rule, resumeText, {
+            allowEscalation: escalated < this.deps.maxEscalationsPerRun,
+            minScore,
+          });
+
+          if (!outcome.match) {
+            continue;
+          }
+
+          vetoedForAll = false;
+          if (outcome.escalated) {
+            escalated += 1;
+          }
+
+          await this.deps.jobs.saveMatchResult(saved.id, outcome.match, userId);
+          anyScored = true;
+
+          if (MatchScore.of(outcome.match.score).meetsThreshold(minScore)) {
+            notifyCandidates.push({ userId, match: outcome.match });
+          }
+        }
+
+        if (vetoedForAll) {
+          skippedByRules += 1;
+          logger.info('Job vetoed as ineligible for all users', {
+            title: saved.title,
+          });
           continue;
         }
 
-        try {
-          await this.deps.notifier.notify({ job: saved, match: outcome.match });
-          await this.deps.logs.createNotificationLog({
-            jobId: saved.id,
-            success: true,
-            payload: JSON.stringify({
-              score: outcome.match.score,
-              source: outcome.match.source,
-            }),
-          });
-          notified += 1;
-        } catch (notifyError) {
-          await this.deps.logs.createNotificationLog({
-            jobId: saved.id,
-            success: false,
-            error:
-              notifyError instanceof Error
-                ? notifyError.message
-                : String(notifyError),
-          });
-          logger.error('Notification failed — job still persisted', {
-            jobId: saved.id,
-            error:
-              notifyError instanceof Error
-                ? notifyError.message
-                : String(notifyError),
-          });
+        if (anyScored) {
+          scored += 1;
+        }
+
+        for (const { userId, match } of notifyCandidates) {
+          if (notified >= this.deps.maxNotificationsPerRun) {
+            break;
+          }
+
+          const chatId = await this.deps.users.getTelegramChatId(userId);
+          if (!chatId) {
+            continue;
+          }
+
+          const alreadyNotified =
+            await this.deps.logs.hasSuccessfulNotification(
+              saved.id,
+              'telegram',
+              userId,
+            );
+          if (alreadyNotified) {
+            continue;
+          }
+
+          try {
+            await this.deps.notifier.notify({
+              job: saved,
+              match,
+              chatId,
+            });
+            await this.deps.logs.createNotificationLog({
+              jobId: saved.id,
+              userId,
+              success: true,
+              payload: JSON.stringify({
+                score: match.score,
+                source: match.source,
+              }),
+            });
+            notified += 1;
+          } catch (notifyError) {
+            await this.deps.logs.createNotificationLog({
+              jobId: saved.id,
+              userId,
+              success: false,
+              error:
+                notifyError instanceof Error
+                  ? notifyError.message
+                  : String(notifyError),
+            });
+            logger.error('Notification failed — job still persisted', {
+              jobId: saved.id,
+              userId,
+              error:
+                notifyError instanceof Error
+                  ? notifyError.message
+                  : String(notifyError),
+            });
+          }
         }
       }
 

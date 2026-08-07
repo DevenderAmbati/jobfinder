@@ -9,6 +9,8 @@ import {
   type PromptTemplateItem,
   type ResumeData,
   type SettingsStatus,
+  type TelegramConnectResult,
+  type TelegramLinkStatus,
 } from '../lib/api';
 
 export function SettingsPage() {
@@ -20,6 +22,7 @@ export function SettingsPage() {
   const [promptContent, setPromptContent] = useState('');
   const [promptEnabled, setPromptEnabled] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
+  const [awaitingTelegramLink, setAwaitingTelegramLink] = useState(false);
 
   const resumeQuery = useQuery({
     queryKey: ['resume'],
@@ -45,6 +48,15 @@ export function SettingsPage() {
     },
   });
 
+  const telegramQuery = useQuery({
+    queryKey: ['telegram-status'],
+    queryFn: async () => {
+      const res = await api<{ data: TelegramLinkStatus }>('/telegram/status');
+      return res.data;
+    },
+    refetchInterval: awaitingTelegramLink ? 2_000 : false,
+  });
+
   useEffect(() => {
     if (!resumeQuery.data) {
       return;
@@ -65,6 +77,13 @@ export function SettingsPage() {
     setPromptEnabled(current.enabled);
   }, [promptsQuery.data, selectedPromptId]);
 
+  useEffect(() => {
+    if (awaitingTelegramLink && telegramQuery.data?.linked) {
+      setAwaitingTelegramLink(false);
+      setMessage('Telegram linked. Job alerts will go to your chat.');
+    }
+  }, [awaitingTelegramLink, telegramQuery.data?.linked]);
+
   const saveResume = useMutation({
     mutationFn: async () => {
       if (pdfFile) {
@@ -83,9 +102,11 @@ export function SettingsPage() {
       });
     },
     onSuccess: () => {
-      setMessage('Resume saved.');
+      setMessage('Resume saved. Match scores are refreshing in the background.');
       setPdfFile(null);
       void queryClient.invalidateQueries({ queryKey: ['resume'] });
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      void queryClient.invalidateQueries({ queryKey: ['analytics'] });
     },
     onError: (err) => setMessage((err as Error).message),
   });
@@ -106,14 +127,112 @@ export function SettingsPage() {
     onError: (err) => setMessage((err as Error).message),
   });
 
+  const connectTelegram = useMutation({
+    mutationFn: async () => {
+      const res = await api<{ data: TelegramConnectResult }>(
+        '/telegram/connect',
+        { method: 'POST', body: '{}' },
+      );
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setAwaitingTelegramLink(true);
+      setMessage('Open Telegram and tap Start to finish linking.');
+      window.open(data.deepLink, '_blank', 'noopener,noreferrer');
+      void queryClient.invalidateQueries({ queryKey: ['telegram-status'] });
+    },
+    onError: (err) => setMessage((err as Error).message),
+  });
+
+  const disconnectTelegram = useMutation({
+    mutationFn: async () =>
+      api<{ data: { ok: boolean } }>('/telegram/connect', {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      setAwaitingTelegramLink(false);
+      setMessage('Telegram disconnected.');
+      void queryClient.invalidateQueries({ queryKey: ['telegram-status'] });
+    },
+    onError: (err) => setMessage((err as Error).message),
+  });
+
+  const telegram = telegramQuery.data;
+  const botReady = telegram?.botConfigured ?? false;
+
   return (
     <section className="page">
       <PageHeader
         title="Settings"
-        description="Resume text, prompt templates, and runtime matching flags."
+        description="Resume text, Telegram alerts, prompt templates, and runtime flags."
       />
 
       {message ? <p className="status">{message}</p> : null}
+
+      <div className="section-block">
+        <h2 className="section-title">Telegram alerts</h2>
+        <p className="muted">
+          Link your own Telegram chat. Match alerts for your resume go only to
+          that chat — not a shared inbox.
+        </p>
+        {telegramQuery.isLoading ? (
+          <LoadingState label="Loading Telegram status…" />
+        ) : telegramQuery.isError ? (
+          <p className="error-text">
+            {(telegramQuery.error as Error).message}
+          </p>
+        ) : (
+          <>
+            <dl className="filter-grid cols-2" style={{ fontSize: '0.875rem' }}>
+              <div>
+                <dt className="field__label">Bot</dt>
+                <dd className="cell-strong">
+                  {botReady
+                    ? telegram?.botUsername
+                      ? `@${telegram.botUsername}`
+                      : 'Configured'
+                    : 'Not configured (set TELEGRAM_BOT_TOKEN)'}
+                </dd>
+              </div>
+              <div>
+                <dt className="field__label">Your chat</dt>
+                <dd className="cell-strong">
+                  {telegram?.linked
+                    ? `Linked${
+                        telegram.linkedAt
+                          ? ` · ${new Date(telegram.linkedAt).toLocaleString()}`
+                          : ''
+                      }`
+                    : awaitingTelegramLink
+                      ? 'Waiting for Start in Telegram…'
+                      : 'Not linked'}
+                </dd>
+              </div>
+            </dl>
+            <div style={{ marginTop: '0.75rem' }}>
+              {telegram?.linked ? (
+                <Button
+                  variant="danger"
+                  loading={disconnectTelegram.isPending}
+                  loadingText="Disconnecting…"
+                  onClick={() => disconnectTelegram.mutate()}
+                >
+                  Disconnect Telegram
+                </Button>
+              ) : (
+                <Button
+                  loading={connectTelegram.isPending}
+                  loadingText="Opening…"
+                  disabled={!botReady}
+                  onClick={() => connectTelegram.mutate()}
+                >
+                  Connect Telegram
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
 
       <div className="section-block">
         <h2 className="section-title">Runtime status</h2>
@@ -135,7 +254,7 @@ export function SettingsPage() {
               </dd>
             </div>
             <div>
-              <dt className="field__label">Telegram</dt>
+              <dt className="field__label">Telegram bot</dt>
               <dd className="cell-strong">
                 {settingsQuery.data.telegramConfigured
                   ? 'Configured'

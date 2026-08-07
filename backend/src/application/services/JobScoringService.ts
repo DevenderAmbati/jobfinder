@@ -53,11 +53,8 @@ export class JobScoringService {
       return { evaluation, match: null, escalated: false };
     }
 
-    // An unreachable job is never worth an LLM call, however well its skills
-    // line up, so location gates escalation alongside the fit floor.
     const escalated =
       options.allowEscalation &&
-      evaluation.locationMatched &&
       evaluation.fitScore >= this.deps.escalationFitFloor;
     const matcher = escalated
       ? this.deps.primaryMatcher
@@ -67,7 +64,7 @@ export class JobScoringService {
     const blended = this.deps.relevance.score({
       resumeScore: raw.score,
       fitScore: evaluation.fitScore,
-      locationMatched: evaluation.locationMatched,
+      applyRuleFit: evaluation.applyRuleFit,
     });
 
     return {

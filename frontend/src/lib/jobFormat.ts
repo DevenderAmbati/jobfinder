@@ -307,3 +307,88 @@ export function isIndiaLocation(location: string | null | undefined): boolean {
   }
   return INDIA_LOCATION_TOKENS.some((token) => normalized.includes(token));
 }
+
+/**
+ * Company / ATS job id from the posting URL (Greenhouse gh_jid, Workday JR…, etc.).
+ * Not the internal database id.
+ */
+export function extractExternalJobId(
+  applyUrl: string | null | undefined,
+): string | null {
+  if (!applyUrl?.trim()) {
+    return null;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(applyUrl.trim());
+  } catch {
+    return null;
+  }
+
+  const queryKeys = [
+    'gh_jid',
+    'jobId',
+    'jobid',
+    'job_id',
+    'requisitionId',
+    'reqId',
+  ];
+  for (const key of queryKeys) {
+    const value = url.searchParams.get(key)?.trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  const segments = url.pathname
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const skipLast = new Set(['apply', 'application', 'jobdetail', 'job-detail']);
+  let candidate =
+    segments.length > 0 ? segments[segments.length - 1]! : '';
+  if (skipLast.has(candidate.toLowerCase()) && segments.length >= 2) {
+    candidate = segments[segments.length - 2]!;
+  }
+
+  const workday = candidate.match(/_((?:JR|R|REQ)[A-Z0-9-]+)$/i);
+  if (workday?.[1]) {
+    return workday[1];
+  }
+
+  const jobsIdx = segments.findIndex((s) =>
+    /^(jobs?|positions?|roles?|requisitions?|jobdetail)$/i.test(s),
+  );
+  if (jobsIdx >= 0 && segments[jobsIdx + 1]) {
+    const next = segments[jobsIdx + 1]!;
+    const wd = next.match(/_((?:JR|R|REQ)[A-Z0-9-]+)$/i);
+    if (wd?.[1]) {
+      return wd[1];
+    }
+    const numericPrefix = next.match(/^(\d{5,})(?:-|$)/);
+    if (numericPrefix?.[1]) {
+      return numericPrefix[1];
+    }
+    if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(next) || /^\d+$/.test(next)) {
+      return next;
+    }
+  }
+
+  const smartrecruiters = candidate.match(/^(\d{6,})(?:-|$)/);
+  if (smartrecruiters?.[1]) {
+    return smartrecruiters[1];
+  }
+
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(candidate) || /^\d+$/.test(candidate)) {
+    return candidate;
+  }
+
+  // Fallback: last path segment when it looks like an ATS code (e.g. JR2022513 alone)
+  if (/^(?:JR|R|REQ)[A-Z0-9-]{3,}$/i.test(candidate)) {
+    return candidate;
+  }
+
+  return null;
+}

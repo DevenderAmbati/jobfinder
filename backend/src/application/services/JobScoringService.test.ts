@@ -35,19 +35,18 @@ const job: Job = {
 
 const rule: Rule = {
   id: '1',
-  name: 'default',
-  countries: ['India'],
-  cities: ['Hyderabad'],
+  userId: 'user-1',
   experience: null,
   skills: ['TypeScript', 'React', 'Node.js'],
   roles: ['Software Engineer'],
-  excludedRoles: ['Manager'],
-  companies: [],
   minMatchScore: 50,
-  enabled: true,
 };
 
-function build(escalationFitFloor: number, primary: JobMatcher, baseline: JobMatcher) {
+function build(
+  escalationFitFloor: number,
+  primary: JobMatcher,
+  baseline: JobMatcher,
+) {
   return new JobScoringService({
     ruleEngine: new RuleEngine(),
     relevance: new RelevanceScorer(),
@@ -58,65 +57,36 @@ function build(escalationFitFloor: number, primary: JobMatcher, baseline: JobMat
 }
 
 describe('JobScoringService', () => {
-  it('does not score a vetoed job', async () => {
-    const primary = stubMatcher(90, 'GEMINI');
-    const baseline = stubMatcher(50, 'KEYWORD');
-    const service = build(0, primary, baseline);
-
-    const outcome = await service.score(
-      { ...job, title: 'Engineering Manager' },
-      rule,
-      'resume',
-      { allowEscalation: true, minScore: 50 },
+  it('blends the matcher score with rule fit when preferences exist', async () => {
+    const service = build(
+      200,
+      stubMatcher(90, 'GEMINI'),
+      stubMatcher(60, 'KEYWORD'),
     );
-
-    expect(outcome.match).toBeNull();
-    expect(primary.match).not.toHaveBeenCalled();
-    expect(baseline.match).not.toHaveBeenCalled();
-  });
-
-  it('blends the matcher score with rule fit', async () => {
-    const service = build(200, stubMatcher(90, 'GEMINI'), stubMatcher(60, 'KEYWORD'));
 
     const outcome = await service.score(job, rule, 'resume', {
       allowEscalation: false,
       minScore: 50,
     });
 
-    // Baseline resume score 60 at 70% plus perfect fit (100) at 30%.
-    expect(outcome.match?.score).toBe(72);
+    // Baseline resume 60 at 60% plus perfect fit 100 at 40% → 76.
+    expect(outcome.match?.score).toBe(76);
   });
 
-  it('ranks an in-area partial match above an out-of-area perfect match', async () => {
-    const service = build(200, stubMatcher(90, 'GEMINI'), stubMatcher(50, 'KEYWORD'));
-
-    const local = await service.score(
-      { ...job, skills: 'React', description: 'React only' },
-      rule,
-      'resume',
-      { allowEscalation: false, minScore: 50 },
-    );
-    const remoteCountry = await service.score(
-      { ...job, location: 'Arlington, TX' },
-      rule,
-      'resume',
-      { allowEscalation: false, minScore: 50 },
+  it('uses resume score only when no preference rules are set', async () => {
+    const service = build(
+      200,
+      stubMatcher(90, 'GEMINI'),
+      stubMatcher(60, 'KEYWORD'),
     );
 
-    expect(local.match?.score).toBeGreaterThan(remoteCountry.match?.score ?? 0);
-  });
+    const outcome = await service.score(job, null, 'resume', {
+      allowEscalation: false,
+      minScore: 50,
+    });
 
-  it('explains why an out-of-area job was scaled down', async () => {
-    const service = build(200, stubMatcher(90, 'GEMINI'), stubMatcher(90, 'KEYWORD'));
-
-    const outcome = await service.score(
-      { ...job, location: 'US, Remote' },
-      rule,
-      'resume',
-      { allowEscalation: false, minScore: 50 },
-    );
-
-    expect(outcome.match?.reasons.join(' ')).toContain('Outside target locations');
+    expect(outcome.match?.score).toBe(60);
+    expect(outcome.match?.reasons.join(' ')).toContain('resume only');
   });
 
   it('uses the free baseline matcher when fit is below the floor', async () => {
@@ -134,22 +104,6 @@ describe('JobScoringService', () => {
     expect(outcome.escalated).toBe(false);
     expect(primary.match).not.toHaveBeenCalled();
     expect(baseline.match).toHaveBeenCalled();
-  });
-
-  it('does not spend an LLM call on an unreachable job', async () => {
-    const primary = stubMatcher(90, 'GEMINI');
-    const baseline = stubMatcher(60, 'KEYWORD');
-    const service = build(0, primary, baseline);
-
-    const outcome = await service.score(
-      { ...job, location: 'Arlington, TX' },
-      rule,
-      'resume',
-      { allowEscalation: true, minScore: 50 },
-    );
-
-    expect(outcome.escalated).toBe(false);
-    expect(primary.match).not.toHaveBeenCalled();
   });
 
   it('escalates to the primary matcher when fit clears the floor', async () => {
@@ -180,28 +134,19 @@ describe('JobScoringService', () => {
   });
 
   it('recommends SKIP when the blended score misses the threshold', async () => {
-    const service = build(200, stubMatcher(90, 'GEMINI'), stubMatcher(20, 'KEYWORD'));
+    const service = build(
+      200,
+      stubMatcher(90, 'GEMINI'),
+      stubMatcher(20, 'KEYWORD'),
+    );
 
     const outcome = await service.score(
-      { ...job, location: 'Seattle, USA', skills: null, description: null },
+      { ...job, skills: null, description: null, title: 'Accountant' },
       rule,
       'resume',
       { allowEscalation: false, minScore: 50 },
     );
 
     expect(outcome.match?.recommendation).toBe('SKIP');
-  });
-
-  it('treats every job as reachable when no location rules are configured', async () => {
-    const service = build(200, stubMatcher(90, 'GEMINI'), stubMatcher(60, 'KEYWORD'));
-
-    const outcome = await service.score(
-      { ...job, location: 'Arlington, TX' },
-      { ...rule, countries: [], cities: [] },
-      'resume',
-      { allowEscalation: false, minScore: 50 },
-    );
-
-    expect(outcome.match?.score).toBe(72);
   });
 });

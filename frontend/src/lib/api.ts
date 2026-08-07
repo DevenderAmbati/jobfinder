@@ -1,3 +1,5 @@
+import { clearSession, getStoredToken } from './auth';
+
 export class ApiError extends Error {
   readonly status: number;
 
@@ -8,13 +10,22 @@ export class ApiError extends Error {
   }
 }
 
+let onUnauthorized: (() => void) | null = null;
+
+/** Register a handler invoked on HTTP 401 (e.g. clear session + redirect). */
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData =
     typeof FormData !== 'undefined' && init?.body instanceof FormData;
+  const token = getStoredToken();
   const response = await fetch(`/api${path}`, {
     ...init,
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -23,6 +34,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = text ? (JSON.parse(text) as unknown) : null;
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearSession();
+      onUnauthorized?.();
+    }
     const message =
       payload &&
       typeof payload === 'object' &&
@@ -36,6 +51,12 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return payload as T;
+}
+
+export interface AuthUserDto {
+  id: string;
+  email: string;
+  name: string | null;
 }
 
 export interface Company {
@@ -102,6 +123,7 @@ export interface ProviderLogItem {
 export interface NotificationLogItem {
   id: string;
   jobId: string;
+  userId?: string | null;
   channel: string;
   success: boolean;
   payload: string | null;
@@ -111,16 +133,11 @@ export interface NotificationLogItem {
 
 export interface RuleConfig {
   id: string;
-  name: string;
-  countries: string[];
-  cities: string[];
+  userId: string;
   experience: string | null;
   skills: string[];
   roles: string[];
-  excludedRoles: string[];
-  companies: string[];
   minMatchScore: number;
-  enabled: boolean;
 }
 
 export type ApplicationStatus =
@@ -165,9 +182,24 @@ export interface SettingsStatus {
   matchScoreThresholdEnv: number;
   ruleMinMatchScore: number | null;
   telegramConfigured: boolean;
+  telegramBotConfigured?: boolean;
   enableDevTools: boolean;
   nodeEnv: string;
   note: string;
+}
+
+export interface TelegramLinkStatus {
+  botConfigured: boolean;
+  botUsername: string | null;
+  linked: boolean;
+  linkedAt: string | null;
+  hasPendingToken: boolean;
+}
+
+export interface TelegramConnectResult {
+  deepLink: string;
+  token: string;
+  botUsername: string;
 }
 
 export interface AnalyticsSummary {

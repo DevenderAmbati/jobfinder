@@ -7,18 +7,15 @@ import { prisma } from './prismaClient.js';
 import { toResume } from './mappers.js';
 
 export class PrismaResumeRepository implements ResumeRepository {
-  async findCurrent(): Promise<Resume | null> {
-    const row = await prisma.resume.findFirst({
-      orderBy: { updatedAt: 'desc' },
-    });
+  async findCurrent(userId: string): Promise<Resume | null> {
+    const row = await prisma.resume.findUnique({ where: { userId } });
     return row ? toResume(row) : null;
   }
 
-  async upsertCurrent(input: ResumeUpsertInput): Promise<Resume> {
-    const existing = await prisma.resume.findFirst({
-      orderBy: { updatedAt: 'desc' },
-    });
-
+  async upsertCurrent(
+    userId: string,
+    input: ResumeUpsertInput,
+  ): Promise<Resume> {
     const data = {
       originalPdfPath: input.originalPdfPath ?? null,
       extractedText: input.extractedText,
@@ -26,9 +23,11 @@ export class PrismaResumeRepository implements ResumeRepository {
       embedding: input.embedding ?? null,
     };
 
-    const row = existing
-      ? await prisma.resume.update({ where: { id: existing.id }, data })
-      : await prisma.resume.create({ data });
+    const row = await prisma.resume.upsert({
+      where: { userId },
+      create: { userId, ...data },
+      update: data,
+    });
 
     return toResume(row);
   }

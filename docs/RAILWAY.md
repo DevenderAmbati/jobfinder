@@ -69,7 +69,8 @@ Set these on the Railway **service** (not only locally):
 
 | Variable | Notes |
 |----------|--------|
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Notifications |
+| `TELEGRAM_BOT_TOKEN` | Shared bot; users link their own chat in Settings |
+| `TELEGRAM_CHAT_ID` | Optional Dev Tools fallback only |
 | `GEMINI_ENABLED` / `GEMINI_API_KEY` | AI matching |
 | `MATCH_SCORE_THRESHOLD`, `ESCALATION_*`, `MAX_*` | See [ENV.md](./ENV.md) |
 

@@ -17,8 +17,10 @@ import { PrismaRuleRepository } from '../../database/PrismaRuleRepository.js';
 import { PrismaResumeRepository } from '../../database/PrismaResumeRepository.js';
 import { PrismaProviderHealthRepository } from '../../database/PrismaProviderHealthRepository.js';
 import { PrismaLogRepository } from '../../database/PrismaLogRepository.js';
+import { PrismaUserRepository } from '../../database/PrismaUserRepository.js';
 import { ProviderRegistry } from '../ProviderRegistry.js';
 import { WorkdayProvider } from './WorkdayProvider.js';
+import { ensureTestUserWithResume } from '../../../test/ensureTestUser.js';
 
 class MockMatcher implements JobMatcher {
   async match(_resumeText: string, _job: Job): Promise<MatchResult> {
@@ -44,10 +46,17 @@ class MockNotifier implements Notifier {
 describe('Workday provider pipeline integration', () => {
   const prisma = new PrismaClient();
   let companyId = '';
+  let userId = '';
   const notifier = new MockNotifier();
 
   beforeAll(async () => {
     await prisma.$connect();
+    const user = await ensureTestUserWithResume(prisma, {
+      extractedText: 'Software Engineer TypeScript React Node.js',
+      markdown: '# Resume\nSoftware Engineer TypeScript React Node.js',
+    });
+    userId = user.id;
+
     const company = await prisma.company.create({
       data: {
         name: `Workday Test ${Date.now()}`,
@@ -59,30 +68,20 @@ describe('Workday provider pipeline integration', () => {
     });
     companyId = company.id;
 
-    const resume = await prisma.resume.findFirst();
-    if (!resume) {
-      await prisma.resume.create({
-        data: {
-          extractedText: 'Software Engineer TypeScript React Node.js',
-          markdown: '# Resume\nSoftware Engineer TypeScript React Node.js',
-        },
-      });
-    }
-
-    const rule = await prisma.rule.findFirst({ where: { name: 'default' } });
-    if (rule) {
-      await prisma.rule.update({
-        where: { id: rule.id },
-        data: {
-          minMatchScore: 50,
-          excludedRoles: JSON.stringify(['Manager']),
-          roles: JSON.stringify(['Software Engineer', 'Backend Engineer']),
-          countries: JSON.stringify(['India', 'Remote']),
-          cities: JSON.stringify(['Hyderabad', 'Remote', 'Bangalore']),
-          skills: JSON.stringify(['TypeScript', 'React', 'Node.js']),
-        },
-      });
-    }
+    await prisma.rule.upsert({
+      where: { userId: user.id },
+      create: {
+        userId: user.id,
+        minMatchScore: 50,
+        roles: JSON.stringify(['Software Engineer', 'Backend Engineer']),
+        skills: JSON.stringify(['TypeScript', 'React', 'Node.js']),
+      },
+      update: {
+        minMatchScore: 50,
+        roles: JSON.stringify(['Software Engineer', 'Backend Engineer']),
+        skills: JSON.stringify(['TypeScript', 'React', 'Node.js']),
+      },
+    });
   });
 
   afterAll(async () => {
@@ -90,6 +89,7 @@ describe('Workday provider pipeline integration', () => {
       const jobs = await prisma.job.findMany({ where: { companyId } });
       const jobIds = jobs.map((job) => job.id);
       if (jobIds.length > 0) {
+        await prisma.jobMatch.deleteMany({ where: { jobId: { in: jobIds } } });
         await prisma.notificationLog.deleteMany({
           where: { jobId: { in: jobIds } },
         });
@@ -148,6 +148,7 @@ describe('Workday provider pipeline integration', () => {
       jobs: new PrismaJobRepository(),
       rules: new PrismaRuleRepository(),
       resumes: new PrismaResumeRepository(),
+      users: new PrismaUserRepository(),
       providerHealth: new PrismaProviderHealthRepository(),
       logs: new PrismaLogRepository(),
       providers: new ProviderRegistry([
@@ -173,9 +174,9 @@ describe('Workday provider pipeline integration', () => {
     const first = await useCase.execute(companyId);
     expect(first.jobsFound).toBe(3);
     expect(first.jobsAdded).toBe(3);
-    // Only "Engineering Manager" is vetoed; the other two are scored.
-    expect(first.skippedByRules).toBe(1);
-    expect(first.scored).toBe(2);
+    // RuleEngine no longer vetoes Manager titles; all three jobs are scored.
+    expect(first.skippedByRules).toBe(0);
+    expect(first.scored).toBe(3);
     expect(first.notified).toBeGreaterThanOrEqual(1);
     expect(notifier.calls).toBeGreaterThanOrEqual(1);
 
@@ -183,12 +184,22 @@ describe('Workday provider pipeline integration', () => {
     expect(persisted).toHaveLength(3);
     expect(persisted.every((job) => job.provider === 'workday')).toBe(true);
 
-    // Mocked resume score 91 at 70% plus perfect rule fit (100) at 30%.
+    // Mocked resume score 91 at 60% plus perfect rule fit (100) at 40%.
     const engineer = persisted.find((job) => job.title === 'Software Engineer');
-    expect(engineer?.matchScore).toBe(94);
+    const engineerMatch = engineer
+      ? await prisma.jobMatch.findUnique({
+          where: { userId_jobId: { userId, jobId: engineer.id } },
+        })
+      : null;
+    expect(engineerMatch?.matchScore).toBe(95);
 
     const manager = persisted.find((job) => job.title === 'Engineering Manager');
-    expect(manager?.matchScore).toBeNull();
+    const managerMatch = manager
+      ? await prisma.jobMatch.findUnique({
+          where: { userId_jobId: { userId, jobId: manager.id } },
+        })
+      : null;
+    expect(managerMatch).not.toBeNull();
 
     const second = await useCase.execute(companyId);
     expect(second.jobsAdded).toBe(0);

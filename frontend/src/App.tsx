@@ -1,8 +1,11 @@
 import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './auth/AuthContext';
 import { AppShell } from './components/AppShell';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LoadingState } from './components/LoadingState';
+import { canAccessDevTools } from './lib/devAccess';
+import { LoginPage } from './pages/LoginPage';
 
 const PlaceholderPage = lazy(() =>
   import('./pages/PlaceholderPage').then((m) => ({
@@ -42,6 +45,16 @@ const AnalyticsPage = lazy(() =>
 );
 
 export default function App() {
+  const { user, ready } = useAuth();
+
+  if (!ready) {
+    return <LoadingState label="Checking session…" />;
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
   return (
     <AppShell>
       <ErrorBoundary>
@@ -56,7 +69,16 @@ export default function App() {
             <Route path="/applications" element={<ApplicationsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/dev" element={<DevToolsPage />} />
+            <Route
+              path="/dev"
+              element={
+                canAccessDevTools(user.email) ? (
+                  <DevToolsPage />
+                ) : (
+                  <Navigate to="/jobs" replace />
+                )
+              }
+            />
             <Route
               path="*"
               element={

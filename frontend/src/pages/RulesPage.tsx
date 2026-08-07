@@ -17,16 +17,10 @@ function splitList(value: string): string[] {
 }
 
 const emptyForm = {
-  name: 'default',
-  countries: '',
-  cities: '',
-  experience: '',
-  skills: '',
   roles: '',
-  excludedRoles: '',
-  companies: '',
+  skills: '',
+  experience: '',
   minMatchScore: '50',
-  enabled: true,
 };
 
 export function RulesPage() {
@@ -45,19 +39,14 @@ export function RulesPage() {
   useEffect(() => {
     const rule = rulesQuery.data;
     if (!rule) {
+      setForm(emptyForm);
       return;
     }
     setForm({
-      name: rule.name,
-      countries: joinList(rule.countries),
-      cities: joinList(rule.cities),
-      experience: rule.experience ?? '',
-      skills: joinList(rule.skills),
       roles: joinList(rule.roles),
-      excludedRoles: joinList(rule.excludedRoles),
-      companies: joinList(rule.companies),
+      skills: joinList(rule.skills),
+      experience: rule.experience ?? '',
       minMatchScore: String(rule.minMatchScore),
-      enabled: rule.enabled,
     });
   }, [rulesQuery.data]);
 
@@ -66,21 +55,18 @@ export function RulesPage() {
       api<{ data: RuleConfig }>('/rules', {
         method: 'PUT',
         body: JSON.stringify({
-          name: form.name,
-          countries: splitList(form.countries),
-          cities: splitList(form.cities),
-          experience: form.experience.trim() || null,
-          skills: splitList(form.skills),
           roles: splitList(form.roles),
-          excludedRoles: splitList(form.excludedRoles),
-          companies: splitList(form.companies),
+          skills: splitList(form.skills),
+          experience: form.experience.trim() || null,
           minMatchScore: Number(form.minMatchScore),
-          enabled: form.enabled,
         }),
       }),
     onSuccess: () => {
-      setMessage('Rules saved.');
+      setMessage(
+        'Preferences saved. Match scores are refreshing in the background.',
+      );
       void queryClient.invalidateQueries({ queryKey: ['rules'] });
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
     onError: (error: Error) => setMessage(error.message),
   });
@@ -89,7 +75,7 @@ export function RulesPage() {
     <section className="page">
       <PageHeader
         title="Rules"
-        description="Configure filters and the minimum match score used before notification."
+        description="Your preferences for scoring and notifications. Leave roles/skills/experience empty to score from resume only (100%). When filled, scores use 60% resume + 40% these preferences."
       />
 
       {rulesQuery.isLoading ? (
@@ -104,16 +90,41 @@ export function RulesPage() {
             saveMutation.mutate();
           }}
         >
-          <label className="field">
-            <span className="field__label">Name</span>
+          <label className="field span-2">
+            <span className="field__label">Preferred roles</span>
             <input
               className="input"
-              value={form.name}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+              value={form.roles}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, roles: e.target.value }))
+              }
+              placeholder="Software Engineer, Backend Engineer, Full Stack"
+            />
+          </label>
+          <label className="field span-2">
+            <span className="field__label">Preferred skills</span>
+            <input
+              className="input"
+              value={form.skills}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, skills: e.target.value }))
+              }
+              placeholder="TypeScript, React, Node.js"
+            />
+          </label>
+          <label className="field span-2">
+            <span className="field__label">Experience</span>
+            <input
+              className="input"
+              value={form.experience}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, experience: e.target.value }))
+              }
+              placeholder="e.g. 2-4 years"
             />
           </label>
           <label className="field">
-            <span className="field__label">Min match score</span>
+            <span className="field__label">Min score for notification</span>
             <input
               className="input"
               value={form.minMatchScore}
@@ -123,93 +134,13 @@ export function RulesPage() {
               inputMode="numeric"
             />
           </label>
-          <label className="field span-2">
-            <span className="field__label">Countries (comma-separated)</span>
-            <input
-              className="input"
-              value={form.countries}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, countries: e.target.value }))
-              }
-            />
-          </label>
-          <label className="field span-2">
-            <span className="field__label">Cities (comma-separated)</span>
-            <input
-              className="input"
-              value={form.cities}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, cities: e.target.value }))
-              }
-            />
-          </label>
-          <label className="field span-2">
-            <span className="field__label">Roles</span>
-            <input
-              className="input"
-              value={form.roles}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, roles: e.target.value }))
-              }
-            />
-          </label>
-          <label className="field span-2">
-            <span className="field__label">Excluded roles</span>
-            <input
-              className="input"
-              value={form.excludedRoles}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, excludedRoles: e.target.value }))
-              }
-            />
-          </label>
-          <label className="field span-2">
-            <span className="field__label">Skills</span>
-            <input
-              className="input"
-              value={form.skills}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, skills: e.target.value }))
-              }
-            />
-          </label>
-          <label className="field span-2">
-            <span className="field__label">Company allow-list (optional)</span>
-            <input
-              className="input"
-              value={form.companies}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, companies: e.target.value }))
-              }
-            />
-          </label>
-          <label className="field span-2">
-            <span className="field__label">Experience hint</span>
-            <input
-              className="input"
-              value={form.experience}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, experience: e.target.value }))
-              }
-            />
-          </label>
-          <label className="checkbox-row span-2">
-            <input
-              type="checkbox"
-              checked={form.enabled}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, enabled: e.target.checked }))
-              }
-            />
-            Enabled
-          </label>
           <div className="span-2">
             <Button
               type="submit"
               loading={saveMutation.isPending}
               loadingText="Saving…"
             >
-              Save rules
+              Save preferences
             </Button>
           </div>
         </form>

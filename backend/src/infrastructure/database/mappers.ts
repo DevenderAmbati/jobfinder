@@ -45,17 +45,48 @@ export function toJob(row: PrismaJob, companyName?: string): Job {
     experience: row.experience,
     skills: row.skills,
     salary: row.salary,
-    salaryEstimate: row.salaryEstimate,
+    salaryEstimate: null,
     postedDate: row.postedDate,
     applyUrl: row.applyUrl,
     provider: row.provider,
     dedupHash: row.dedupHash,
-    matchScore: row.matchScore,
-    matchSource: row.matchSource,
-    recommendation: row.recommendation,
-    matchReasons: parseJsonStringArray(row.matchReasons),
-    missingSkills: parseJsonStringArray(row.missingSkills),
+    matchScore: null,
+    matchSource: null,
+    recommendation: null,
+    matchReasons: null,
+    missingSkills: null,
     createdAt: row.createdAt,
+  };
+}
+
+export function toJobWithMatch(
+  row: PrismaJob,
+  companyName: string | undefined,
+  match:
+    | {
+        matchScore: number;
+        matchReasons: string | null;
+        missingSkills: string | null;
+        interviewDifficulty: string | null;
+        salaryEstimate: string | null;
+        recommendation: string | null;
+        matchSource: 'GEMINI' | 'KEYWORD' | null;
+      }
+    | null
+    | undefined,
+): Job {
+  const base = toJob(row, companyName);
+  if (!match) {
+    return base;
+  }
+  return {
+    ...base,
+    matchScore: match.matchScore,
+    matchSource: match.matchSource,
+    recommendation: match.recommendation,
+    matchReasons: parseJsonStringArray(match.matchReasons),
+    missingSkills: parseJsonStringArray(match.missingSkills),
+    salaryEstimate: match.salaryEstimate,
   };
 }
 
@@ -81,16 +112,11 @@ function parseJsonStringArray(raw: string | null | undefined): string[] | null {
 export function toRule(row: PrismaRule): Rule {
   return {
     id: row.id,
-    name: row.name,
-    countries: parseStringList(row.countries),
-    cities: parseStringList(row.cities),
+    userId: row.userId,
     experience: row.experience,
     skills: parseStringList(row.skills),
     roles: parseStringList(row.roles),
-    excludedRoles: parseStringList(row.excludedRoles),
-    companies: parseStringList(row.companies),
     minMatchScore: row.minMatchScore,
-    enabled: row.enabled,
   };
 }
 
@@ -145,6 +171,7 @@ export function toNotificationLog(row: PrismaNotificationLog): NotificationLog {
   return {
     id: row.id,
     jobId: row.jobId,
+    userId: row.userId,
     channel: row.channel,
     success: row.success,
     payload: row.payload,

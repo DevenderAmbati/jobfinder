@@ -9,8 +9,9 @@ Manual pass/fail after a fresh seed. Run backend on `:3001` and frontend on `:51
 - [ ] `cd frontend && npm install && npm run dev`
 - [ ] `GET /api/health` returns `status: ok` and database connected
 - [ ] `GET /api/version` returns app version
-- [ ] `GET /api/cron/status` shows scheduler `running: true` after boot
-- [ ] `GET /api/does-not-exist` returns JSON `{ error.code: "NOT_FOUND" }`
+- [ ] Sign in at the UI (`owner@localhost` / `changeme` after migration, or register a new account)
+- [ ] `GET /api/cron/status` with `Authorization: Bearer <token>` shows scheduler `running: true`
+- [ ] Unauthenticated `GET /api/jobs` returns 401
 - [ ] Stop the process with Ctrl+C and confirm logs show graceful shutdown
 
 ## Pipeline
@@ -24,7 +25,8 @@ Manual pass/fail after a fresh seed. Run backend on `:3001` and frontend on `:51
 
 - [ ] Rules page loads default rule; save `minMatchScore` and confirm it persists
 - [ ] Settings → Runtime status shows Gemini/Telegram flags (no secrets)
-- [ ] Settings → save resume text/markdown; optional PDF upload succeeds
+- [ ] Settings → save resume text/markdown; optional PDF upload succeeds; Jobs scores refresh for that user only
+- [ ] Register a second user, upload a different resume, confirm company list is shared but match scores differ
 - [ ] Settings → edit an enabled prompt template and save
 
 ## Tracker & analytics
@@ -49,7 +51,7 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full flow.
 
 - [ ] GitHub repo connected; Railway service uses Dockerfile
 - [ ] Postgres plugin linked (`DATABASE_URL`)
-- [ ] `NODE_ENV=production`, `ENABLE_DEV_TOOLS=false`, `LOG_TO_FILES=false`
+- [ ] `NODE_ENV=production`, `ENABLE_DEV_TOOLS=false`, `LOG_TO_FILES=false`, `JWT_SECRET` set (≥24 chars)
 - [ ] Deploy succeeds; `GET /api/health` → `ok`
 - [ ] `GET /api/cron/status` → `running: true`
 - [ ] SPA loads on the Railway URL (Jobs page)

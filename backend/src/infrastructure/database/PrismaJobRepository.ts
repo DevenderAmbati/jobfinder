@@ -7,7 +7,7 @@ import type {
   JobRepository,
 } from '../../domain/repositories/JobRepository.js';
 import { prisma } from './prismaClient.js';
-import { toJob } from './mappers.js';
+import { toJob, toJobWithMatch } from './mappers.js';
 
 function startOfUtcDay(date: Date): Date {
   return new Date(
@@ -38,23 +38,25 @@ function postedWindowBounds(
   }
 }
 
-/**
- * `scoreMin` and `scored` both constrain matchScore, so they are resolved
- * together — spreading them separately would let one silently overwrite the
- * other. `scored: false` wins over `scoreMin`, since an unscored job has no
- * score to compare against.
- */
-function matchScoreFilter(
-  options: JobListOptions | undefined,
-): { matchScore?: { gte: number } | { not: null } | null } {
-  if (options?.scored === false) {
-    return { matchScore: null };
+function matchRelationFilter(
+  userId: string,
+  options: JobListOptions,
+):
+  | { matches: { some: { userId: string; matchScore?: { gte: number } } } }
+  | { matches: { none: { userId: string } } }
+  | Record<string, never> {
+  if (options.scored === false) {
+    return { matches: { none: { userId } } };
   }
-  if (typeof options?.scoreMin === 'number') {
-    return { matchScore: { gte: options.scoreMin } };
+  if (typeof options.scoreMin === 'number') {
+    return {
+      matches: {
+        some: { userId, matchScore: { gte: options.scoreMin } },
+      },
+    };
   }
-  if (options?.scored === true) {
-    return { matchScore: { not: null } };
+  if (options.scored === true) {
+    return { matches: { some: { userId } } };
   }
   return {};
 }
@@ -79,6 +81,16 @@ function splitSkills(raw: string | null | undefined): string[] {
     .map((part) => part.trim())
     .filter((part) => part.length >= 2 && part.length <= 40);
 }
+
+type MatchRow = {
+  matchScore: number;
+  matchReasons: string | null;
+  missingSkills: string | null;
+  interviewDifficulty: string | null;
+  salaryEstimate: string | null;
+  recommendation: string | null;
+  matchSource: 'GEMINI' | 'KEYWORD' | null;
+};
 
 export class PrismaJobRepository implements JobRepository {
   async existsByDedupHash(hash: string): Promise<boolean> {
@@ -106,10 +118,25 @@ export class PrismaJobRepository implements JobRepository {
     return toJob(row, row.company.name);
   }
 
-  async saveMatchResult(jobId: string, match: MatchResult): Promise<void> {
-    await prisma.job.update({
-      where: { id: jobId },
-      data: {
+  async saveMatchResult(
+    jobId: string,
+    match: MatchResult,
+    userId: string,
+  ): Promise<void> {
+    await prisma.jobMatch.upsert({
+      where: { userId_jobId: { userId, jobId } },
+      create: {
+        userId,
+        jobId,
+        matchScore: match.score,
+        matchReasons: JSON.stringify(match.reasons),
+        missingSkills: JSON.stringify(match.missingSkills),
+        interviewDifficulty: match.interviewDifficulty,
+        salaryEstimate: match.salaryEstimate,
+        recommendation: match.recommendation,
+        matchSource: match.source,
+      },
+      update: {
         matchScore: match.score,
         matchReasons: JSON.stringify(match.reasons),
         missingSkills: JSON.stringify(match.missingSkills),
@@ -121,97 +148,146 @@ export class PrismaJobRepository implements JobRepository {
     });
   }
 
-  async clearMatchResult(jobId: string): Promise<void> {
-    await prisma.job.update({
-      where: { id: jobId },
-      data: {
-        matchScore: null,
-        matchReasons: null,
-        missingSkills: null,
-        interviewDifficulty: null,
-        salaryEstimate: null,
-        recommendation: null,
-        matchSource: null,
-      },
-    });
+  async clearMatchResult(jobId: string, userId: string): Promise<void> {
+    await prisma.jobMatch.deleteMany({ where: { jobId, userId } });
   }
 
-  async findById(id: string): Promise<Job | null> {
+  async findById(id: string, userId?: string): Promise<Job | null> {
     const row = await prisma.job.findUnique({
       where: { id },
-      include: { company: true },
-    });
-    return row ? toJob(row, row.company.name) : null;
-  }
-
-  async findMany(options?: JobListOptions): Promise<Job[]> {
-    const search = options?.search?.trim();
-    const role = options?.role?.trim();
-    const location = options?.location?.trim();
-    const skills = options?.skills?.trim();
-    const posted = options?.postedWithin
-      ? postedWindowBounds(options.postedWithin)
-      : null;
-
-    const rows = await prisma.job.findMany({
-      where: {
-        ...(options?.companyId ? { companyId: options.companyId } : {}),
-        ...(options?.provider ? { provider: options.provider } : {}),
-        ...matchScoreFilter(options),
-        ...(role ? { title: { contains: role } } : {}),
-        ...(location ? { location: { contains: location } } : {}),
-        ...(skills ? { skills: { contains: skills } } : {}),
-        ...(posted
-          ? {
-              OR: [
-                {
-                  postedDate: {
-                    ...(posted.gte ? { gte: posted.gte } : {}),
-                    ...(posted.lt ? { lt: posted.lt } : {}),
-                  },
-                },
-                {
-                  AND: [
-                    { postedDate: null },
-                    {
-                      createdAt: {
-                        ...(posted.gte ? { gte: posted.gte } : {}),
-                        ...(posted.lt ? { lt: posted.lt } : {}),
-                      },
-                    },
-                  ],
-                },
-              ],
-            }
-          : {}),
-        ...(search
-          ? {
-              OR: [
-                { title: { contains: search } },
-                { location: { contains: search } },
-                { skills: { contains: search } },
-                { experience: { contains: search } },
-                { company: { name: { contains: search } } },
-              ],
-            }
+      include: {
+        company: true,
+        ...(userId
+          ? { matches: { where: { userId }, take: 1 } }
           : {}),
       },
-      include: { company: true },
-      // Recency is the primary feed order. Jobs without a provider posting
-      // date naturally sort after dated jobs; createdAt keeps those stable and
-      // newest-first, while score only breaks otherwise identical timestamps.
-      orderBy: [
-        { postedDate: 'desc' },
-        { createdAt: 'desc' },
-        { matchScore: 'desc' },
-      ],
-      take: options?.limit ?? 100,
     });
-    return rows.map((row) => toJob(row, row.company.name));
+    if (!row) {
+      return null;
+    }
+    const match = 'matches' in row ? (row.matches as MatchRow[])[0] : undefined;
+    return toJobWithMatch(row, row.company.name, match);
+  }
+
+  async findMany(options: JobListOptions): Promise<Job[]> {
+    const search = options.search?.trim();
+    const location = options.location?.trim();
+    const skills = options.skills?.trim();
+    const posted = options.postedWithin
+      ? postedWindowBounds(options.postedWithin)
+      : null;
+    const userId = options.userId;
+    const companyIds = [
+      ...(options.companyIds ?? []),
+      ...(options.companyId ? [options.companyId] : []),
+    ].filter(Boolean);
+    const roles = [
+      ...(options.roles ?? []),
+      ...(options.role ? [options.role] : []),
+    ]
+      .map((role) => role.trim())
+      .filter(Boolean);
+
+    const andFilters: object[] = [];
+
+    if (companyIds.length === 1) {
+      andFilters.push({ companyId: companyIds[0] });
+    } else if (companyIds.length > 1) {
+      andFilters.push({ companyId: { in: companyIds } });
+    }
+
+    if (options.provider) {
+      andFilters.push({ provider: options.provider });
+    }
+
+    const matchFilter = matchRelationFilter(userId, options);
+    if (Object.keys(matchFilter).length > 0) {
+      andFilters.push(matchFilter);
+    }
+
+    if (roles.length === 1) {
+      andFilters.push({
+        title: { contains: roles[0], mode: 'insensitive' },
+      });
+    } else if (roles.length > 1) {
+      andFilters.push({
+        OR: roles.map((roleName) => ({
+          title: { contains: roleName, mode: 'insensitive' },
+        })),
+      });
+    }
+
+    if (location) {
+      andFilters.push({
+        location: { contains: location, mode: 'insensitive' },
+      });
+    }
+
+    if (skills) {
+      andFilters.push({
+        skills: { contains: skills, mode: 'insensitive' },
+      });
+    }
+
+    if (posted) {
+      andFilters.push({
+        OR: [
+          {
+            postedDate: {
+              ...(posted.gte ? { gte: posted.gte } : {}),
+              ...(posted.lt ? { lt: posted.lt } : {}),
+            },
+          },
+          {
+            AND: [
+              { postedDate: null },
+              {
+                createdAt: {
+                  ...(posted.gte ? { gte: posted.gte } : {}),
+                  ...(posted.lt ? { lt: posted.lt } : {}),
+                },
+              },
+            ],
+          },
+        ],
+      });
+    }
+
+    if (search) {
+      andFilters.push({
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { location: { contains: search, mode: 'insensitive' } },
+          { skills: { contains: search, mode: 'insensitive' } },
+          { experience: { contains: search, mode: 'insensitive' } },
+          {
+            company: {
+              name: { contains: search, mode: 'insensitive' },
+            },
+          },
+        ],
+      });
+    }
+
+    const rows = await prisma.job.findMany({
+      where: andFilters.length > 0 ? { AND: andFilters } : {},
+      include: {
+        company: true,
+        matches: { where: { userId }, take: 1 },
+      },
+      orderBy: [{ postedDate: 'desc' }, { createdAt: 'desc' }],
+      take: options.limit ?? 100,
+      ...(typeof options.offset === 'number' && options.offset > 0
+        ? { skip: options.offset }
+        : {}),
+    });
+    return rows.map((row) =>
+      toJobWithMatch(row, row.company.name, row.matches[0]),
+    );
   }
 
   async findFacets(): Promise<JobFacets> {
-    const [locationRows, titleRows, skillRows, rule] = await Promise.all([
+    const [locationRows, titleRows, skillRows] = await Promise.all([
       prisma.job.findMany({
         where: { location: { not: null } },
         select: { location: true },
@@ -228,7 +304,6 @@ export class PrismaJobRepository implements JobRepository {
         select: { skills: true },
         take: 300,
       }),
-      prisma.rule.findFirst({ where: { enabled: true } }),
     ]);
 
     const roleTokens = new Set<string>();
@@ -238,24 +313,12 @@ export class PrismaJobRepository implements JobRepository {
         roleTokens.add(head);
       }
     }
-    for (const role of (rule?.roles ?? '')
-      .split(',')
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      roleTokens.add(role);
-    }
 
     const skillTokens = new Set<string>();
     for (const row of skillRows) {
       for (const skill of splitSkills(row.skills)) {
         skillTokens.add(skill);
       }
-    }
-    for (const skill of (rule?.skills ?? '')
-      .split(',')
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      skillTokens.add(skill);
     }
 
     return {

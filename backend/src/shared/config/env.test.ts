@@ -36,13 +36,24 @@ describe('loadConfig', () => {
   });
 
   it('parses LOG_LEVEL and defaults by NODE_ENV', () => {
-    expect(loadConfig(baseEnv({ NODE_ENV: 'production' })).logLevel).toBe(
-      'info',
-    );
+    expect(
+      loadConfig(
+        baseEnv({
+          NODE_ENV: 'production',
+          JWT_SECRET: 'production-jwt-secret-at-least-24',
+        }),
+      ).logLevel,
+    ).toBe('info');
     expect(loadConfig(baseEnv({ NODE_ENV: 'development' })).logLevel).toBe(
       'debug',
     );
     expect(loadConfig(baseEnv({ LOG_LEVEL: 'warn' })).logLevel).toBe('warn');
+  });
+
+  it('requires JWT_SECRET in production', () => {
+    expect(() => loadConfig(baseEnv({ NODE_ENV: 'production' }))).toThrow(
+      AppError,
+    );
   });
 
   it('rejects invalid LOG_LEVEL and PORT', () => {

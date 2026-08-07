@@ -6,6 +6,7 @@ import {
   createProviderStatusController,
   createVersionController,
 } from '../controllers/healthController.js';
+import { createAuthController } from '../controllers/authController.js';
 import { createCompanyController } from '../controllers/companyController.js';
 import { createJobController } from '../controllers/jobController.js';
 import { createProviderHealthController } from '../controllers/providerHealthController.js';
@@ -17,6 +18,8 @@ import { createPromptsController } from '../controllers/promptsController.js';
 import { createSettingsController } from '../controllers/settingsController.js';
 import { createAnalyticsController } from '../controllers/analyticsController.js';
 import { createDevToolsController } from '../controllers/devToolsController.js';
+import { createTelegramController } from '../controllers/telegramController.js';
+import { createAuthMiddleware } from '../middleware/authMiddleware.js';
 import { createDevToolsGuard } from '../middleware/devToolsGuard.js';
 import { resumeUpload } from '../middleware/resumeUpload.js';
 import type { RequestHandler } from 'express';
@@ -27,6 +30,7 @@ export interface ApiRouterOptions {
 
 /**
  * HTTP route map. Controllers only coordinate — use cases own orchestration.
+ * Public: health, version, register, login. Everything else requires JWT.
  */
 export function createApiRouter(
   container: AppContainer,
@@ -34,10 +38,12 @@ export function createApiRouter(
 ): Router {
   const apiRouter = Router();
   const fetchLimit = options.fetchRateLimiter;
+  const requireAuth = createAuthMiddleware(container.auth);
   const getHealth = createHealthController(container);
   const getVersion = createVersionController(container);
   const getCronStatus = createCronStatusController(container);
   const providerStatus = createProviderStatusController(container);
+  const auth = createAuthController(container);
   const companies = createCompanyController(container);
   const jobs = createJobController(container);
   const providerHealth = createProviderHealthController(container);
@@ -48,11 +54,22 @@ export function createApiRouter(
   const prompts = createPromptsController(container);
   const settings = createSettingsController(container);
   const analytics = createAnalyticsController(container);
+  const telegram = createTelegramController(container);
   const dev = createDevToolsController(container);
   const requireDevTools = createDevToolsGuard(container.config);
 
   apiRouter.get('/health', getHealth);
   apiRouter.get('/version', getVersion);
+  apiRouter.post('/auth/register', (req, res, next) =>
+    void auth.register(req, res, next),
+  );
+  apiRouter.post('/auth/login', (req, res, next) =>
+    void auth.login(req, res, next),
+  );
+
+  apiRouter.use(requireAuth);
+
+  apiRouter.get('/auth/me', (req, res, next) => void auth.me(req, res, next));
   apiRouter.get('/cron/status', getCronStatus);
   apiRouter.get('/providers/status', (req, res, next) =>
     void providerStatus.summary(req, res, next),
@@ -91,6 +108,9 @@ export function createApiRouter(
   apiRouter.patch('/applications/:id', (req, res, next) =>
     void applications.update(req, res, next),
   );
+  apiRouter.delete('/applications/:id', (req, res, next) =>
+    void applications.remove(req, res, next),
+  );
   apiRouter.get('/resume', (req, res, next) => void resume.get(req, res, next));
   apiRouter.put(
     '/resume',
@@ -103,6 +123,15 @@ export function createApiRouter(
   );
   apiRouter.get('/settings', (req, res, next) =>
     void settings.get(req, res, next),
+  );
+  apiRouter.get('/telegram/status', (req, res, next) =>
+    void telegram.status(req, res, next),
+  );
+  apiRouter.post('/telegram/connect', (req, res, next) =>
+    void telegram.connect(req, res, next),
+  );
+  apiRouter.delete('/telegram/connect', (req, res, next) =>
+    void telegram.disconnect(req, res, next),
   );
   apiRouter.get('/analytics/summary', (req, res, next) =>
     void analytics.summary(req, res, next),

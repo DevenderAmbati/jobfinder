@@ -7,8 +7,9 @@ import { prisma } from './prismaClient.js';
 import { toApplication } from './mappers.js';
 
 export class PrismaApplicationRepository implements ApplicationRepository {
-  async findAll(): Promise<Application[]> {
+  async findAll(userId: string): Promise<Application[]> {
     const rows = await prisma.application.findMany({
+      where: { userId },
       include: { job: { include: { company: true } } },
       orderBy: { updatedAt: 'desc' },
     });
@@ -21,9 +22,12 @@ export class PrismaApplicationRepository implements ApplicationRepository {
     );
   }
 
-  async findByJobId(jobId: string): Promise<Application | null> {
+  async findByJobId(
+    userId: string,
+    jobId: string,
+  ): Promise<Application | null> {
     const row = await prisma.application.findUnique({
-      where: { jobId },
+      where: { userId_jobId: { userId, jobId } },
       include: { job: { include: { company: true } } },
     });
     if (!row) {
@@ -37,12 +41,13 @@ export class PrismaApplicationRepository implements ApplicationRepository {
   }
 
   async create(
+    userId: string,
     jobId: string,
     status: ApplicationStatus = 'SAVED',
     notes: string | null = null,
   ): Promise<Application> {
     const row = await prisma.application.create({
-      data: { jobId, status, notes },
+      data: { userId, jobId, status, notes },
       include: { job: { include: { company: true } } },
     });
     return toApplication(row, {
@@ -53,10 +58,17 @@ export class PrismaApplicationRepository implements ApplicationRepository {
   }
 
   async updateStatus(
+    userId: string,
     id: string,
     status: ApplicationStatus,
     notes?: string | null,
   ): Promise<Application> {
+    const existing = await prisma.application.findFirst({
+      where: { id, userId },
+    });
+    if (!existing) {
+      throw new Error('APPLICATION_NOT_FOUND');
+    }
     const row = await prisma.application.update({
       where: { id },
       data: {
@@ -70,5 +82,15 @@ export class PrismaApplicationRepository implements ApplicationRepository {
       companyName: row.job.company.name,
       applyUrl: row.job.applyUrl,
     });
+  }
+
+  async delete(userId: string, id: string): Promise<void> {
+    const existing = await prisma.application.findFirst({
+      where: { id, userId },
+    });
+    if (!existing) {
+      throw new Error('APPLICATION_NOT_FOUND');
+    }
+    await prisma.application.delete({ where: { id } });
   }
 }

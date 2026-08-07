@@ -68,6 +68,19 @@ async function main(): Promise<void> {
   try {
     const { data } = payload;
 
+    const owner = await prisma.user.upsert({
+      where: { email: 'owner@localhost' },
+      create: {
+        id: 'legacy_default_user',
+        email: 'owner@localhost',
+        passwordHash:
+          '$2b$10$yOLAbH1ekbaVf4mp/kxlZupCghYNOK5wtexe5PVFOSlBY/jFLBFSC',
+        name: 'Owner',
+      },
+      update: {},
+    });
+    console.log(`[import] default user: ${owner.email}`);
+
     if (data.companies.length > 0) {
       await prisma.company.createMany({
         data: data.companies.map((row) => ({
@@ -86,44 +99,49 @@ async function main(): Promise<void> {
       console.log(`[import] companies: ${data.companies.length}`);
     }
 
-    if (data.rules.length > 0) {
-      await prisma.rule.createMany({
-        data: data.rules.map((row) => ({
-          id: String(row.id),
-          name: String(row.name),
-          countries: row.countries == null ? null : String(row.countries),
-          cities: row.cities == null ? null : String(row.cities),
-          experience: row.experience == null ? null : String(row.experience),
-          skills: row.skills == null ? null : String(row.skills),
-          roles: row.roles == null ? null : String(row.roles),
-          excludedRoles:
-            row.excludedRoles == null ? null : String(row.excludedRoles),
-          companies: row.companies == null ? null : String(row.companies),
-          minMatchScore: Number(row.minMatchScore),
-          enabled: Boolean(row.enabled),
-          createdAt: asRequiredDate(row.createdAt),
-          updatedAt: asRequiredDate(row.updatedAt),
-        })),
-        skipDuplicates: true,
+    // Legacy export had a global rule — attach the first row to the owner.
+    const ruleRow = data.rules[0];
+    if (ruleRow) {
+      await prisma.rule.upsert({
+        where: { userId: owner.id },
+        create: {
+          id: String(ruleRow.id),
+          userId: owner.id,
+          experience:
+            ruleRow.experience == null ? null : String(ruleRow.experience),
+          skills: ruleRow.skills == null ? null : String(ruleRow.skills),
+          roles: ruleRow.roles == null ? null : String(ruleRow.roles),
+          minMatchScore: Number(ruleRow.minMatchScore ?? 50),
+          createdAt: asRequiredDate(ruleRow.createdAt),
+          updatedAt: asRequiredDate(ruleRow.updatedAt),
+        },
+        update: {},
       });
-      console.log(`[import] rules: ${data.rules.length}`);
+      console.log('[import] rules: 1 (owner)');
     }
 
-    if (data.resumes.length > 0) {
-      await prisma.resume.createMany({
-        data: data.resumes.map((row) => ({
-          id: String(row.id),
+    // Legacy export had a singleton resume — attach the first row to the owner.
+    const resumeRow = data.resumes[0];
+    if (resumeRow) {
+      await prisma.resume.upsert({
+        where: { userId: owner.id },
+        create: {
+          id: String(resumeRow.id),
+          userId: owner.id,
           originalPdfPath:
-            row.originalPdfPath == null ? null : String(row.originalPdfPath),
-          extractedText: String(row.extractedText),
-          markdown: String(row.markdown),
-          embedding: row.embedding == null ? null : String(row.embedding),
-          createdAt: asRequiredDate(row.createdAt),
-          updatedAt: asRequiredDate(row.updatedAt),
-        })),
-        skipDuplicates: true,
+            resumeRow.originalPdfPath == null
+              ? null
+              : String(resumeRow.originalPdfPath),
+          extractedText: String(resumeRow.extractedText),
+          markdown: String(resumeRow.markdown),
+          embedding:
+            resumeRow.embedding == null ? null : String(resumeRow.embedding),
+          createdAt: asRequiredDate(resumeRow.createdAt),
+          updatedAt: asRequiredDate(resumeRow.updatedAt),
+        },
+        update: {},
       });
-      console.log(`[import] resumes: ${data.resumes.length}`);
+      console.log('[import] resumes: 1 (owner)');
     }
 
     if (data.promptTemplates.length > 0) {
@@ -177,23 +195,6 @@ async function main(): Promise<void> {
           applyUrl: String(row.applyUrl),
           provider: String(row.provider),
           dedupHash: String(row.dedupHash),
-          matchScore: row.matchScore == null ? null : Number(row.matchScore),
-          matchReasons:
-            row.matchReasons == null ? null : String(row.matchReasons),
-          missingSkills:
-            row.missingSkills == null ? null : String(row.missingSkills),
-          interviewDifficulty:
-            row.interviewDifficulty == null
-              ? null
-              : String(row.interviewDifficulty),
-          salaryEstimate:
-            row.salaryEstimate == null ? null : String(row.salaryEstimate),
-          recommendation:
-            row.recommendation == null ? null : String(row.recommendation),
-          matchSource:
-            row.matchSource == null
-              ? null
-              : (String(row.matchSource) as MatchSource),
           createdAt: asRequiredDate(row.createdAt),
           updatedAt: asRequiredDate(row.updatedAt),
         })),
@@ -204,10 +205,46 @@ async function main(): Promise<void> {
       );
     }
 
+    const matchRows = data.jobs.filter((row) => row.matchScore != null);
+    if (matchRows.length > 0) {
+      for (let i = 0; i < matchRows.length; i += JOB_BATCH) {
+        const slice = matchRows.slice(i, i + JOB_BATCH);
+        await prisma.jobMatch.createMany({
+          data: slice.map((row) => ({
+            id: `jm_${String(row.id)}`,
+            userId: owner.id,
+            jobId: String(row.id),
+            matchScore: Number(row.matchScore),
+            matchReasons:
+              row.matchReasons == null ? null : String(row.matchReasons),
+            missingSkills:
+              row.missingSkills == null ? null : String(row.missingSkills),
+            interviewDifficulty:
+              row.interviewDifficulty == null
+                ? null
+                : String(row.interviewDifficulty),
+            salaryEstimate:
+              row.salaryEstimate == null ? null : String(row.salaryEstimate),
+            recommendation:
+              row.recommendation == null ? null : String(row.recommendation),
+            matchSource:
+              row.matchSource == null
+                ? null
+                : (String(row.matchSource) as MatchSource),
+            createdAt: asRequiredDate(row.createdAt),
+            updatedAt: asRequiredDate(row.updatedAt),
+          })),
+          skipDuplicates: true,
+        });
+      }
+      console.log(`[import] jobMatches: ${matchRows.length}`);
+    }
+
     if (data.applications.length > 0) {
       await prisma.application.createMany({
         data: data.applications.map((row) => ({
           id: String(row.id),
+          userId: owner.id,
           jobId: String(row.jobId),
           status: String(row.status) as ApplicationStatus,
           notes: row.notes == null ? null : String(row.notes),

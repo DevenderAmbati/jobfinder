@@ -36,6 +36,8 @@ export interface AppConfig {
   rateLimitMax: number;
   rateLimitFetchMax: number;
   requestLogging: boolean;
+  /** HMAC secret for session JWTs. */
+  jwtSecret: string;
 }
 
 const LOG_LEVELS = new Set<LogLevel>(['debug', 'info', 'warn', 'error']);
@@ -140,6 +142,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   );
   const requestLogging = parseBool(env.REQUEST_LOGGING, true);
 
+  const jwtSecret =
+    env.JWT_SECRET?.trim() ||
+    (nodeEnv === 'production' ? '' : 'dev-only-jwt-secret-change-me');
+  if (!jwtSecret) {
+    throw new AppError(
+      'CONFIG_ERROR',
+      'JWT_SECRET is required in production',
+      500,
+    );
+  }
+  if (nodeEnv === 'production' && jwtSecret.length < 24) {
+    throw new AppError(
+      'CONFIG_ERROR',
+      'JWT_SECRET must be at least 24 characters in production',
+      500,
+    );
+  }
+
   return {
     port,
     nodeEnv,
@@ -166,6 +186,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     rateLimitMax,
     rateLimitFetchMax,
     requestLogging,
+    jwtSecret,
   };
 }
 
