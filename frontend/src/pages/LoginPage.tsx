@@ -46,7 +46,8 @@ export function LoginPage() {
         </h1>
         <p className="auth-lead">
           Companies and job listings are shared. Match scores follow your
-          resume.
+          resume. Production accounts are separate from local — create an
+          account here if this is your first sign-in on this URL.
         </p>
 
         <form className="auth-form" onSubmit={(e) => void onSubmit(e)}>
@@ -67,11 +68,16 @@ export function LoginPage() {
             <span className="field__label">Email</span>
             <input
               className="input"
-              type="email"
+              type="text"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
+              autoComplete="username"
+              placeholder="you@example.com"
             />
           </label>
 

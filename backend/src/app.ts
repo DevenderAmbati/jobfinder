@@ -21,6 +21,7 @@ import { configureLogger, logger } from './shared/utils/logger.js';
 import { registerProcessHandlers } from './shared/process/registerProcessHandlers.js';
 import { createContainer } from './infrastructure/di/container.js';
 import { prisma } from './infrastructure/database/prismaClient.js';
+import { ensureBootstrapOwner } from './infrastructure/database/ensureBootstrapOwner.js';
 import {
   closeAllPlaywrightBrowsers,
   configurePlaywrightRuntime,
@@ -71,6 +72,11 @@ export function startServer(): Server {
       logToFiles: config.logToFiles,
       logDir: config.logDir,
       ui: publicDir ?? 'not-built',
+    });
+    void ensureBootstrapOwner().catch((error: unknown) => {
+      logger.error('Bootstrap owner failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     });
   });
 
