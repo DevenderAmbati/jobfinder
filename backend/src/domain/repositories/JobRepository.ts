@@ -35,6 +35,12 @@ export interface JobListOptions {
   limit?: number;
   /** Skip the first N rows (for batched rescore / pagination). */
   offset?: number;
+  /** Include job description text (needed for matching). List API omits it. */
+  includeDescription?: boolean;
+  /**
+   * Internal catalog walks (rescore) — do not apply the HTTP list payload cap.
+   */
+  forInternalWalk?: boolean;
 }
 
 export interface JobFacets {

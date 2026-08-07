@@ -269,10 +269,9 @@ export class PrismaJobRepository implements JobRepository {
       });
     }
 
-    const take = Math.min(
-      Math.max(1, options.limit ?? 100),
-      2_500,
-    );
+    const take = options.forInternalWalk
+      ? Math.max(1, options.limit ?? 100)
+      : Math.min(Math.max(1, options.limit ?? 100), 2_500);
 
     const rows = await prisma.job.findMany({
       where: andFilters.length > 0 ? { AND: andFilters } : {},
@@ -281,6 +280,7 @@ export class PrismaJobRepository implements JobRepository {
         companyId: true,
         title: true,
         location: true,
+        description: Boolean(options.includeDescription),
         experience: true,
         skills: true,
         salary: true,
@@ -318,7 +318,7 @@ export class PrismaJobRepository implements JobRepository {
           companyId: row.companyId,
           title: row.title,
           location: row.location,
-          description: null,
+          description: row.description ?? null,
           experience: row.experience,
           skills: row.skills,
           salary: row.salary,

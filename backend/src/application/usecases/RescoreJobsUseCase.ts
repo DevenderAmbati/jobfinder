@@ -67,6 +67,8 @@ export class RescoreJobsUseCase {
         userId: options.userId,
         ...(options.onlyUnscored ? { scored: false } : {}),
         limit: take,
+        includeDescription: true,
+        forInternalWalk: true,
         // onlyUnscored shrinks the unscored set each batch — always read from start.
         // Full rescore uses offset so every catalog row is visited once.
         ...(options.onlyUnscored ? {} : { offset }),
