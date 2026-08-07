@@ -136,8 +136,8 @@ export function JobsPage() {
         params.set('scoreMin', String(matchThreshold));
       }
     }
-    // Shared catalog can be 10k+ rows; keep enough headroom for older postings.
-    params.set('limit', '20000');
+    // Cap payload size — full JD text + 10k+ rows OOMs/times out on Railway (HTTP 502).
+    params.set('limit', '2500');
     return params.toString();
   }, [filters, matchThreshold, onlyAboveThreshold, hasResume]);
 

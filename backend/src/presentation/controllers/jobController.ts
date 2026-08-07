@@ -40,7 +40,11 @@ export function createJobController(container: AppContainer) {
         const scoreMinRaw = queryString(req.query.scoreMin);
         const scoreMin = scoreMinRaw ? Number(scoreMinRaw) : undefined;
         const limitRaw = queryString(req.query.limit);
-        const limit = limitRaw ? Number(limitRaw) : undefined;
+        const limitParsed = limitRaw ? Number(limitRaw) : undefined;
+        const limit =
+          typeof limitParsed === 'number' && Number.isFinite(limitParsed)
+            ? Math.min(Math.max(1, Math.floor(limitParsed)), 2_500)
+            : undefined;
         const postedRaw = queryString(req.query.postedWithin);
         const postedWithin =
           postedRaw && POSTED_WITHIN.has(postedRaw)

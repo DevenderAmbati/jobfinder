@@ -269,20 +269,69 @@ export class PrismaJobRepository implements JobRepository {
       });
     }
 
+    const take = Math.min(
+      Math.max(1, options.limit ?? 100),
+      2_500,
+    );
+
     const rows = await prisma.job.findMany({
       where: andFilters.length > 0 ? { AND: andFilters } : {},
-      include: {
-        company: true,
-        matches: { where: { userId }, take: 1 },
+      select: {
+        id: true,
+        companyId: true,
+        title: true,
+        location: true,
+        experience: true,
+        skills: true,
+        salary: true,
+        postedDate: true,
+        applyUrl: true,
+        provider: true,
+        dedupHash: true,
+        createdAt: true,
+        updatedAt: true,
+        company: { select: { name: true } },
+        matches: {
+          where: { userId },
+          take: 1,
+          select: {
+            matchScore: true,
+            matchReasons: true,
+            missingSkills: true,
+            interviewDifficulty: true,
+            salaryEstimate: true,
+            recommendation: true,
+            matchSource: true,
+          },
+        },
       },
       orderBy: [{ postedDate: 'desc' }, { createdAt: 'desc' }],
-      take: options.limit ?? 100,
+      take,
       ...(typeof options.offset === 'number' && options.offset > 0
         ? { skip: options.offset }
         : {}),
     });
     return rows.map((row) =>
-      toJobWithMatch(row, row.company.name, row.matches[0]),
+      toJobWithMatch(
+        {
+          id: row.id,
+          companyId: row.companyId,
+          title: row.title,
+          location: row.location,
+          description: null,
+          experience: row.experience,
+          skills: row.skills,
+          salary: row.salary,
+          postedDate: row.postedDate,
+          applyUrl: row.applyUrl,
+          provider: row.provider,
+          dedupHash: row.dedupHash,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        },
+        row.company.name,
+        row.matches[0],
+      ),
     );
   }
 
