@@ -1467,6 +1467,22 @@ video {
   color: var(--accent);
 }
 
+.match-score--pending {
+  letter-spacing: 0.12em;
+  color: var(--ink-muted);
+  animation: match-score-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes match-score-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .job-apply {
   white-space: nowrap;
 }

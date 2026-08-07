@@ -128,13 +128,11 @@ export function JobsPage() {
       params.append('role', role);
     }
     if (filters.postedWithin) params.set('postedWithin', filters.postedWithin);
-    // With a resume: only rows that already have a JobMatch for this user.
-    // Without one: show the shared catalog (scores render as —).
-    if (hasResume) {
+    // Always show the shared catalog. Scores fill in as JobMatch rows are written.
+    // "Above threshold" still needs scored rows only.
+    if (hasResume && onlyAboveThreshold) {
       params.set('scored', 'true');
-      if (onlyAboveThreshold) {
-        params.set('scoreMin', String(matchThreshold));
-      }
+      params.set('scoreMin', String(matchThreshold));
     }
     // Cap payload size — full JD text + 10k+ rows OOMs/times out on Railway (HTTP 502).
     params.set('limit', '2500');
@@ -148,6 +146,17 @@ export function JobsPage() {
       return res.data;
     },
     enabled: !rulesQuery.isLoading && resumeReady,
+    refetchInterval: (query) => {
+      if (!hasResume) {
+        return false;
+      }
+      const rows = query.state.data;
+      if (!rows?.length) {
+        return 8_000;
+      }
+      const pending = rows.some((job) => typeof job.matchScore !== 'number');
+      return pending ? 8_000 : false;
+    },
   });
 
   const applicationsQuery = useQuery({
@@ -253,7 +262,8 @@ export function JobsPage() {
   ].filter((value) => value.trim()).length;
 
   const aboveThresholdCount = jobs.filter(
-    (job) => (job.matchScore ?? 0) >= matchThreshold,
+    (job) =>
+      typeof job.matchScore === 'number' && job.matchScore >= matchThreshold,
   ).length;
 
   function patchFilters(patch: Partial<typeof emptyFilters>) {
@@ -267,7 +277,7 @@ export function JobsPage() {
         title="Jobs for you"
         description={
           hasResume
-            ? 'India-based resume matches. Sort by latest posting or match score.'
+            ? 'India listings with live match scores. Unscored rows show … until matching finishes.'
             : 'Browsing India listings without match scores. Add a resume to score them.'
         }
       />
@@ -284,7 +294,7 @@ export function JobsPage() {
         <div>
           <span className="match-summary__value">{jobs.length || '—'}</span>
           <span className="match-summary__label">
-            {hasResume ? 'India matches' : 'India listings'}
+            {hasResume ? 'India jobs' : 'India listings'}
           </span>
         </div>
         <div>
@@ -497,22 +507,33 @@ export function JobsPage() {
                       </span>
                     </td>
                     <td>
-                      <span
-                        className={
-                          (job.matchScore ?? 0) >= matchThreshold
-                            ? 'match-score match-score--strong'
-                            : 'match-score'
-                        }
-                        title={
-                          (job.matchScore ?? 0) >= matchThreshold
-                            ? `Meets your ${matchThreshold}% threshold`
-                            : `Below your ${matchThreshold}% threshold`
-                        }
-                      >
-                        {typeof job.matchScore === 'number'
-                          ? `${Math.round(job.matchScore)}%`
-                          : '—'}
-                      </span>
+                      {typeof job.matchScore === 'number' ? (
+                        <span
+                          className={
+                            job.matchScore >= matchThreshold
+                              ? 'match-score match-score--strong'
+                              : 'match-score'
+                          }
+                          title={
+                            job.matchScore >= matchThreshold
+                              ? `Meets your ${matchThreshold}% threshold`
+                              : `Below your ${matchThreshold}% threshold`
+                          }
+                        >
+                          {`${Math.round(job.matchScore)}%`}
+                        </span>
+                      ) : (
+                        <span
+                          className="match-score match-score--pending"
+                          title={
+                            hasResume
+                              ? 'Match score is calculating…'
+                              : 'Add a resume to score this job'
+                          }
+                        >
+                          {hasResume ? '…' : '—'}
+                        </span>
+                      )}
                     </td>
                     <td>
                       <div className="job-actions">
@@ -608,7 +629,7 @@ export function JobsPage() {
                   <tr>
                     <td colSpan={9} className="empty">
                       {hasResume
-                        ? 'No scored jobs yet. Fetch jobs for a company, then wait for resume matching to finish.'
+                        ? 'No India jobs in the catalog yet. Fetch companies from the Companies page, then wait for matching to fill scores.'
                         : 'No India jobs in the catalog yet. Fetch companies from the Companies page.'}
                     </td>
                   </tr>
