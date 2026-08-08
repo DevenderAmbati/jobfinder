@@ -4,12 +4,12 @@ Personal target list for the Job Intelligence Platform.
 
 **Providers:** Greenhouse · Lever · Workday · Microsoft · Ashby · SmartRecruiters · SuccessFactors (CSB) · Oracle · Eightfold · Avature · SAP · Goldman · Custom
 
-## Seeded (~73)
+## Seeded (~102)
 
 | Provider | Companies |
 |----------|-----------|
-| greenhouse | Razorpay, PhonePe, Postman, InMobi, Observe.AI, Groww, Figma, Discord, Dropbox, Datadog*, Stripe*, Airbnb*, Coinbase*, Cloudflare*, Twilio*, Robinhood* |
-| ashby | Sarvam AI, Notion, Ramp, Linear, OpenAI* |
+| greenhouse | Razorpay, PhonePe, Postman, InMobi, Observe.AI, Groww, Figma, Discord, Dropbox, Datadog*, Stripe*, Airbnb*, Coinbase*, Cloudflare*, Twilio*, Robinhood*, **Anthropic**, **Databricks**, **MongoDB**, **Okta**, **Brex**, **Elastic**, **Pinterest**, **Scale AI**, **Affirm**, **Block**, **GitLab**, **Lyft**, **Reddit**, **Asana**, **Klaviyo**, **Instacart**, **Gusto**, **Vercel**, **Duolingo**, **Chime**, **Mercury**, **Webflow** |
+| ashby | Sarvam AI, Notion, Ramp, Linear, OpenAI*, **Harvey**, **ElevenLabs**, **Sierra**, **Cursor**, **Perplexity**, **Replit**, **Cognition**, **Browserbase** |
 | lever | Paytm, **Meesho**, **CRED**, **OLX** (EU) |
 | workday | Adobe…Mastercard, NVIDIA, Intel, Autodesk*, Broadcom*, BlackRock*, Wells Fargo*, Morgan Stanley*, **Accenture*** |
 | oracle | Oracle OCI, Texas Instruments, JP Morgan* |
