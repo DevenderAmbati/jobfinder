@@ -55,6 +55,14 @@ export function createJobController(container: AppContainer) {
         const scored =
           scoredRaw === 'true' ? true : scoredRaw === 'false' ? false : undefined;
 
+        const sortRaw = queryString(req.query.sort);
+        const sort =
+          sortRaw === 'match-desc' || sortRaw === 'match-asc'
+            ? sortRaw
+            : sortRaw === 'latest'
+              ? 'latest'
+              : undefined;
+
         // Roles must not be comma-split (titles can contain commas) — only
         // repeated `role=` params. Company IDs may be comma-joined.
         const roles = (() => {
@@ -82,6 +90,7 @@ export function createJobController(container: AppContainer) {
           skills: queryString(req.query.skills),
           postedWithin,
           scoreMin: Number.isFinite(scoreMin) ? scoreMin : undefined,
+          sort,
           limit: Number.isFinite(limit) ? limit : undefined,
         });
         res.status(200).json({ data: jobs });

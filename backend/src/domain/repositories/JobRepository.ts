@@ -32,6 +32,12 @@ export interface JobListOptions {
   skills?: string;
   postedWithin?: 'today' | 'yesterday' | 'week' | 'month';
   scored?: boolean;
+  /**
+   * Order results. `match-desc`/`match-asc` sort by the user's match score at
+   * the DB layer (scored jobs only), so the row cap keeps the top matches
+   * instead of only the most recent postings. Defaults to newest first.
+   */
+  sort?: 'latest' | 'match-desc' | 'match-asc';
   limit?: number;
   /** Skip the first N rows (for batched rescore / pagination). */
   offset?: number;

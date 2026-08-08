@@ -188,6 +188,8 @@ export class PrismaJobRepository implements JobRepository {
       .map((role) => role.trim())
       .filter(Boolean);
 
+    // Filters that apply to Job rows only (no match relation). Reused by the
+    // score-sorted path, which queries from the JobMatch side instead.
     const andFilters: object[] = [];
 
     if (companyIds.length === 1) {
@@ -198,11 +200,6 @@ export class PrismaJobRepository implements JobRepository {
 
     if (options.provider) {
       andFilters.push({ provider: options.provider });
-    }
-
-    const matchFilter = matchRelationFilter(userId, options);
-    if (Object.keys(matchFilter).length > 0) {
-      andFilters.push(matchFilter);
     }
 
     if (roles.length === 1) {
@@ -273,8 +270,88 @@ export class PrismaJobRepository implements JobRepository {
       ? Math.max(1, options.limit ?? 100)
       : Math.min(Math.max(1, options.limit ?? 100), 2_500);
 
+    const jobWhere = andFilters.length > 0 ? { AND: andFilters } : {};
+
+    // Score-sorted path: query from the JobMatch side so the row cap keeps the
+    // top matches (Prisma can't orderBy a to-many relation scalar on Job).
+    if (options.sort === 'match-desc' || options.sort === 'match-asc') {
+      const direction = options.sort === 'match-desc' ? 'desc' : 'asc';
+      const matchRows = await prisma.jobMatch.findMany({
+        where: {
+          userId,
+          ...(typeof options.scoreMin === 'number'
+            ? { matchScore: { gte: options.scoreMin } }
+            : {}),
+          job: jobWhere,
+        },
+        select: {
+          matchScore: true,
+          matchReasons: true,
+          missingSkills: true,
+          interviewDifficulty: true,
+          salaryEstimate: true,
+          recommendation: true,
+          matchSource: true,
+          job: {
+            select: {
+              id: true,
+              companyId: true,
+              title: true,
+              location: true,
+              description: Boolean(options.includeDescription),
+              experience: true,
+              skills: true,
+              salary: true,
+              postedDate: true,
+              applyUrl: true,
+              provider: true,
+              dedupHash: true,
+              createdAt: true,
+              updatedAt: true,
+              company: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: [{ matchScore: direction }, { job: { postedDate: 'desc' } }],
+        take,
+        ...(typeof options.offset === 'number' && options.offset > 0
+          ? { skip: options.offset }
+          : {}),
+      });
+      return matchRows.map((match) =>
+        toJobWithMatch(
+          {
+            id: match.job.id,
+            companyId: match.job.companyId,
+            title: match.job.title,
+            location: match.job.location,
+            description: match.job.description ?? null,
+            experience: match.job.experience,
+            skills: match.job.skills,
+            salary: match.job.salary,
+            postedDate: match.job.postedDate,
+            applyUrl: match.job.applyUrl,
+            provider: match.job.provider,
+            dedupHash: match.job.dedupHash,
+            createdAt: match.job.createdAt,
+            updatedAt: match.job.updatedAt,
+          },
+          match.job.company.name,
+          match,
+        ),
+      );
+    }
+
+    // Default path: newest first. Match relation filter (scored / scoreMin)
+    // applies here too.
+    const matchFilter = matchRelationFilter(userId, options);
+    const defaultWhere =
+      Object.keys(matchFilter).length > 0
+        ? { AND: [...andFilters, matchFilter] }
+        : jobWhere;
+
     const rows = await prisma.job.findMany({
-      where: andFilters.length > 0 ? { AND: andFilters } : {},
+      where: defaultWhere,
       select: {
         id: true,
         companyId: true,

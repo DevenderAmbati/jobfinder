@@ -134,10 +134,15 @@ export function JobsPage() {
       params.set('scored', 'true');
       params.set('scoreMin', String(matchThreshold));
     }
+    // Sort by match score at the DB layer so the row cap keeps the top matches
+    // instead of only the most recent postings (only meaningful with a resume).
+    if (hasResume && (sortBy === 'match-desc' || sortBy === 'match-asc')) {
+      params.set('sort', sortBy);
+    }
     // Cap payload size — full JD text + 10k+ rows OOMs/times out on Railway (HTTP 502).
     params.set('limit', '2500');
     return params.toString();
-  }, [filters, matchThreshold, onlyAboveThreshold, hasResume]);
+  }, [filters, matchThreshold, onlyAboveThreshold, hasResume, sortBy]);
 
   const jobsQuery = useQuery({
     queryKey: ['jobs', queryString],
