@@ -141,11 +141,14 @@ model Application {
   job       Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
   status    ApplicationStatus @default(SAVED)
   notes     String?
+  /// When the user first marked this role as applied (or later pipeline status).
+  appliedAt DateTime?
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 
   @@unique([userId, jobId])
   @@index([userId])
+  @@index([userId, appliedAt])
 }
 
 model NotificationLog {

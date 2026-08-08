@@ -3,6 +3,7 @@ import {
   extractLeverSiteSlug,
   formatLeverSalary,
   LeverProvider,
+  resolveLeverApiBase,
 } from './LeverProvider.js';
 import type { Company } from '../../../domain/entities/Company.js';
 
@@ -21,6 +22,10 @@ describe('extractLeverSiteSlug', () => {
     expect(extractLeverSiteSlug('https://jobs.lever.co/netflix')).toBe('netflix');
   });
 
+  it('parses jobs.eu.lever.co URLs', () => {
+    expect(extractLeverSiteSlug('https://jobs.eu.lever.co/olx')).toBe('olx');
+  });
+
   it('parses API paths', () => {
     expect(
       extractLeverSiteSlug('https://api.lever.co/v0/postings/spotify'),
@@ -29,6 +34,20 @@ describe('extractLeverSiteSlug', () => {
 
   it('accepts raw slugs', () => {
     expect(extractLeverSiteSlug('leverdemo')).toBe('leverdemo');
+  });
+});
+
+describe('resolveLeverApiBase', () => {
+  it('uses EU API for jobs.eu.lever.co', () => {
+    expect(resolveLeverApiBase('https://jobs.eu.lever.co/olx')).toBe(
+      'https://api.eu.lever.co/v0/postings',
+    );
+  });
+
+  it('uses US API for jobs.lever.co', () => {
+    expect(resolveLeverApiBase('https://jobs.lever.co/meesho')).toBe(
+      'https://api.lever.co/v0/postings',
+    );
   });
 });
 

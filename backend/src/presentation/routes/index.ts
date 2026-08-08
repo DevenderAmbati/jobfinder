@@ -136,6 +136,9 @@ export function createApiRouter(
   apiRouter.get('/analytics/summary', (req, res, next) =>
     void analytics.summary(req, res, next),
   );
+  apiRouter.get('/analytics/applications', (req, res, next) =>
+    void analytics.applications(req, res, next),
+  );
 
   const devRouter = Router();
   devRouter.use(requireDevTools);

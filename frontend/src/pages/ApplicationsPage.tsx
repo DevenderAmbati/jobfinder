@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import {
+  AppliedTrendCharts,
+  StatusBreakdownCharts,
+} from '../components/ApplicationCharts';
 import { PageHeader } from '../components/PageHeader';
 import { LoadingState } from '../components/LoadingState';
 import { Pagination } from '../components/Pagination';
@@ -8,6 +12,7 @@ import { TableScroll } from '../components/TableScroll';
 import { usePagination } from '../hooks/usePagination';
 import {
   api,
+  type ApplicationAnalytics,
   type ApplicationItem,
   type ApplicationStatus,
 } from '../lib/api';
@@ -32,6 +37,8 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
 };
 
 const CLEAR_VALUE = 'CLEAR';
+const TREND_DAYS = 14;
+const TREND_WEEKS = 8;
 
 const STATUS_OPTIONS = [
   ...STATUSES.map((status) => ({
@@ -63,8 +70,20 @@ export function ApplicationsPage() {
     },
   });
 
+  const analyticsQuery = useQuery({
+    queryKey: ['analytics-applications', TREND_DAYS, TREND_WEEKS],
+    queryFn: async () => {
+      const res = await api<{ data: ApplicationAnalytics }>(
+        `/analytics/applications?days=${TREND_DAYS}&weeks=${TREND_WEEKS}`,
+      );
+      return res.data;
+    },
+  });
+
   const invalidateApplications = () => {
     void queryClient.invalidateQueries({ queryKey: ['applications'] });
+    void queryClient.invalidateQueries({ queryKey: ['analytics-applications'] });
+    void queryClient.invalidateQueries({ queryKey: ['analytics-summary'] });
   };
 
   const statusMutation = useMutation({
@@ -101,6 +120,7 @@ export function ApplicationsPage() {
   const applications = applicationsQuery.data ?? [];
   const pagination = usePagination(applications, 10);
   const { setPage } = pagination;
+  const analytics = analyticsQuery.data;
 
   useEffect(() => {
     setPage(1);
@@ -112,6 +132,19 @@ export function ApplicationsPage() {
         title="Applications"
         description="Bookmarked and applied roles from the Jobs table."
       />
+
+      {analyticsQuery.isLoading ? (
+        <LoadingState label="Loading analytics…" />
+      ) : analyticsQuery.isError ? (
+        <p className="error-text">
+          {(analyticsQuery.error as Error).message}
+        </p>
+      ) : analytics ? (
+        <>
+          <StatusBreakdownCharts analytics={analytics} />
+          <AppliedTrendCharts analytics={analytics} />
+        </>
+      ) : null}
 
       <label className="field" style={{ maxWidth: '16rem' }}>
         <span className="field__label">Filter by status</span>

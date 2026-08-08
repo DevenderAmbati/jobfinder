@@ -47,7 +47,13 @@ export class PrismaApplicationRepository implements ApplicationRepository {
     notes: string | null = null,
   ): Promise<Application> {
     const row = await prisma.application.create({
-      data: { userId, jobId, status, notes },
+      data: {
+        userId,
+        jobId,
+        status,
+        notes,
+        appliedAt: status === 'SAVED' ? null : new Date(),
+      },
       include: { job: { include: { company: true } } },
     });
     return toApplication(row, {
@@ -69,10 +75,19 @@ export class PrismaApplicationRepository implements ApplicationRepository {
     if (!existing) {
       throw new Error('APPLICATION_NOT_FOUND');
     }
+
+    let appliedAt = existing.appliedAt;
+    if (status === 'SAVED') {
+      appliedAt = null;
+    } else if (!appliedAt) {
+      appliedAt = new Date();
+    }
+
     const row = await prisma.application.update({
       where: { id },
       data: {
         status,
+        appliedAt,
         ...(notes !== undefined ? { notes } : {}),
       },
       include: { job: { include: { company: true } } },

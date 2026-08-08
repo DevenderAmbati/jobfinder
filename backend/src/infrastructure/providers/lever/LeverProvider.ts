@@ -40,10 +40,16 @@ export interface LeverPosting {
 
 interface LeverProviderDeps {
   fetchImpl?: typeof fetch;
-  /** Defaults to US host; set to https://api.eu.lever.co/v0/postings for EU. */
+  /**
+   * Force a Lever API host. When omitted, US vs EU is inferred from careerUrl
+   * (`jobs.eu.lever.co` / `api.eu.lever.co` → EU API).
+   */
   baseUrl?: string;
   pageSize?: number;
 }
+
+const LEVER_API_US = 'https://api.lever.co/v0/postings';
+const LEVER_API_EU = 'https://api.eu.lever.co/v0/postings';
 
 /**
  * Lever Postings API adapter.
@@ -52,24 +58,30 @@ interface LeverProviderDeps {
 export class LeverProvider implements JobProvider {
   readonly name = 'lever';
   private readonly fetchImpl: typeof fetch;
-  private readonly baseUrl: string;
+  private readonly baseUrlOverride: string | undefined;
   private readonly pageSize: number;
 
   constructor(deps: LeverProviderDeps = {}) {
     this.fetchImpl = deps.fetchImpl ?? fetch;
-    this.baseUrl = deps.baseUrl ?? 'https://api.lever.co/v0/postings';
+    this.baseUrlOverride = deps.baseUrl;
     this.pageSize = deps.pageSize ?? 100;
   }
 
   async fetchJobs(company: Company): Promise<Job[]> {
     const site = extractLeverSiteSlug(company.careerUrl);
+    const baseUrl =
+      this.baseUrlOverride ?? resolveLeverApiBase(company.careerUrl);
     const all: LeverPosting[] = [];
     let skip = 0;
 
-    logger.provider.info('Fetching Lever jobs', { company: company.name, site });
+    logger.provider.info('Fetching Lever jobs', {
+      company: company.name,
+      site,
+      api: baseUrl,
+    });
 
     for (;;) {
-      const url = `${this.baseUrl}/${encodeURIComponent(site)}?mode=json&limit=${this.pageSize}&skip=${skip}`;
+      const url = `${baseUrl}/${encodeURIComponent(site)}?mode=json&limit=${this.pageSize}&skip=${skip}`;
       const response = await this.fetchImpl(url, {
         method: 'GET',
         headers: { Accept: 'application/json' },
@@ -155,6 +167,23 @@ export class LeverProvider implements JobProvider {
       provider: this.name,
     };
   }
+}
+
+/** Infer Lever US vs EU postings API from the careers URL. */
+export function resolveLeverApiBase(careerUrl: string): string {
+  try {
+    const raw = careerUrl.trim();
+    const url = new URL(raw.includes('://') ? raw : `https://${raw}`);
+    if (
+      url.hostname.includes('eu.lever.co') ||
+      url.hostname === 'api.eu.lever.co'
+    ) {
+      return LEVER_API_EU;
+    }
+  } catch {
+    // fall through to US
+  }
+  return LEVER_API_US;
 }
 
 /**

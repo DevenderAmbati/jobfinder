@@ -217,3 +217,20 @@ export interface AnalyticsSummary {
   matchScoreThresholdUsed: number;
   asOf: string;
 }
+
+export interface ApplicationAnalytics {
+  total: number;
+  bookmarked: number;
+  applied: number;
+  interview: number;
+  rejected: number;
+  offer: number;
+  joined: number;
+  appliedToday: number;
+  byStatus: Record<string, number>;
+  dailyApplied: Array<{ date: string; count: number }>;
+  weeklyApplied: Array<{ weekStart: string; count: number }>;
+  days: number;
+  weeks: number;
+  asOf: string;
+}

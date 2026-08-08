@@ -248,6 +248,12 @@ async function main(): Promise<void> {
           jobId: String(row.jobId),
           status: String(row.status) as ApplicationStatus,
           notes: row.notes == null ? null : String(row.notes),
+          appliedAt:
+            row.appliedAt != null
+              ? asRequiredDate(row.appliedAt)
+              : String(row.status) !== 'SAVED'
+                ? asRequiredDate(row.updatedAt)
+                : null,
           createdAt: asRequiredDate(row.createdAt),
           updatedAt: asRequiredDate(row.updatedAt),
         })),

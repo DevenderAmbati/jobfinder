@@ -515,6 +515,148 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     enabled: true,
     frequency: DEFAULT_COMPANY_FREQUENCY,
   },
+
+  // ── India Tier 1 (aggressive) — verified boards / custom careers ────────
+  {
+    name: 'Fireflies.ai',
+    tier: 1,
+    provider: 'custom',
+    careerUrl: 'https://fireflies.freshteam.com/jobs',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'OLX',
+    tier: 1,
+    provider: 'lever',
+    careerUrl: 'https://jobs.eu.lever.co/olx',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Qrata',
+    tier: 1,
+    provider: 'smartrecruiters',
+    careerUrl: 'https://careers.smartrecruiters.com/Qrata',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Zepto',
+    tier: 1,
+    provider: 'custom',
+    careerUrl: 'https://www.zeptonow.com/careers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Xoxoday',
+    tier: 1,
+    provider: 'custom',
+    careerUrl: 'https://www.xoxoday.com/careers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+
+  // ── India Tier 2 — verified boards / custom careers ─────────────────────
+  {
+    name: 'Meesho',
+    tier: 2,
+    provider: 'lever',
+    careerUrl: 'https://jobs.lever.co/meesho',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Swiggy',
+    tier: 2,
+    provider: 'smartrecruiters',
+    careerUrl: 'https://careers.smartrecruiters.com/Swiggy',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Zomato',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://www.eternal.com/careers/',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Flipkart',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://www.flipkartcareers.com/',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Myntra',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://careers.myntra.com/',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'CRED',
+    tier: 2,
+    provider: 'lever',
+    careerUrl: 'https://jobs.lever.co/cred',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Navi',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://navi.com/careers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Juspay',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://juspay.io/careers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'ShareChat',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://sharechat.com/careers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'MakeMyTrip',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://careers.makemytrip.com/',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+
+  // ── India Tier 3 — enterprise ───────────────────────────────────────────
+  {
+    name: 'Reliance Jio',
+    tier: 3,
+    provider: 'custom',
+    careerUrl: 'https://careers.jio.com',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Accenture',
+    tier: 3,
+    provider: 'workday',
+    careerUrl: 'https://accenture.wd103.myworkdayjobs.com/AccentureCareers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
 ];
 
 /** Still on your list, but blocked until we verify a board URL or harden a scraper. */
@@ -527,7 +669,7 @@ export const UNSUPPORTED_TARGET_COMPANIES: UnsupportedTargetCompany[] = [
   {
     name: 'Darwinbox',
     tier: 2,
-    reason: 'Greenhouse board token no longer public',
+    reason: 'Greenhouse board token no longer public (self-hosted Darwinbox ATS)',
   },
   {
     name: 'HighLevel',
@@ -611,6 +753,88 @@ export const UNSUPPORTED_TARGET_COMPANIES: UnsupportedTargetCompany[] = [
     tier: 1,
     reason:
       'Avature apply portal only — public search (mckinsey.com/careers/search-jobs) times out and jobs.mckinsey.com/SearchJobs is WAF-blocked',
+  },
+  {
+    name: 'TagMango',
+    tier: 1,
+    reason: 'No public Greenhouse/Lever/Ashby/Workday/SmartRecruiters board',
+  },
+  {
+    name: 'Rooh',
+    tier: 1,
+    reason: 'No public target-ATS board found',
+  },
+  {
+    name: 'SuperKalam',
+    tier: 1,
+    reason: 'Hiring via forms / LinkedIn — no public ATS board',
+  },
+  {
+    name: 'The Product Highway',
+    tier: 1,
+    reason: 'Custom / LinkedIn only — no public ATS board',
+  },
+  {
+    name: 'Mattersec',
+    tier: 1,
+    reason: 'No public careers ATS board found',
+  },
+  {
+    name: 'Dream11',
+    tier: 2,
+    reason: 'Former Lever board (dreamsports) is dead (API 404); no replacement board',
+  },
+  {
+    name: 'Udaan',
+    tier: 2,
+    reason: 'Careers page times out / no public target-ATS board',
+  },
+  {
+    name: 'Tata Digital',
+    tier: 3,
+    reason: 'Custom Tata Neu careers — no public target-ATS board',
+  },
+  {
+    name: 'Tata Technologies',
+    tier: 3,
+    reason: 'Custom careers portal — no public target-ATS board',
+  },
+  {
+    name: 'TCS',
+    tier: 3,
+    reason: 'iBegin / proprietary portal — not a supported provider',
+  },
+  {
+    name: 'Infosys',
+    tier: 3,
+    reason: 'Proprietary Infosys careers portal — not a supported provider',
+  },
+  {
+    name: 'Wipro',
+    tier: 3,
+    reason:
+      'SuccessFactors host is not Career Site Builder (*.jobs.hr.cloud.sap)',
+  },
+  {
+    name: 'Deloitte',
+    tier: 3,
+    reason:
+      'India uses SuccessFactors (southasiacareers.deloitte.com); not CSB-compatible',
+  },
+  {
+    name: 'Capgemini',
+    tier: 3,
+    reason: 'SuccessFactors portal — not CSB-compatible with current adapter',
+  },
+  {
+    name: 'Cognizant',
+    tier: 3,
+    reason: 'Phenom careers portal — provider not implemented',
+  },
+  {
+    name: 'LTIMindtree',
+    tier: 3,
+    reason: 'Custom careers portal — no public target-ATS board',
   },
 ];
 

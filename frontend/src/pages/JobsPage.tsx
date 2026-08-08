@@ -201,6 +201,8 @@ export function JobsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['applications'] });
+      void queryClient.invalidateQueries({ queryKey: ['analytics-applications'] });
+      void queryClient.invalidateQueries({ queryKey: ['analytics-summary'] });
     },
     onSettled: () => {
       setActionJobId(null);
@@ -275,11 +277,7 @@ export function JobsPage() {
       <PageHeader
         eyebrow={hasResume ? 'Matched to your resume' : 'Shared job catalog'}
         title="Jobs for you"
-        description={
-          hasResume
-            ? 'India listings with live match scores. Unscored rows show … until matching finishes.'
-            : 'Browsing India listings without match scores. Add a resume to score them.'
-        }
+
       />
 
       <div className="match-summary">
