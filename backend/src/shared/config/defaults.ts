@@ -35,6 +35,9 @@ export const DEFAULT_PROVIDERS = [
   'avature',
   'sap',
   'goldman',
+  'google',
+  'amazon',
+  'apple',
   'custom',
   'stub',
 ] as const;

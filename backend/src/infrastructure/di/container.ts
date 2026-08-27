@@ -41,6 +41,11 @@ import { EightfoldProvider } from '../providers/eightfold/EightfoldProvider.js';
 import { AvatureProvider } from '../providers/avature/AvatureProvider.js';
 import { SapProvider } from '../providers/sap/SapProvider.js';
 import { GoldmanProvider } from '../providers/goldman/GoldmanProvider.js';
+import { GoogleProvider } from '../providers/google/GoogleProvider.js';
+import { createPlaywrightGoogleListingFetcher } from '../providers/google/playwrightListingFetcher.js';
+import { AmazonProvider } from '../providers/amazon/AmazonProvider.js';
+import { AppleProvider } from '../providers/apple/AppleProvider.js';
+import { createPlaywrightAppleListingFetcher } from '../providers/apple/playwrightListingFetcher.js';
 import {
   CustomProvider,
   createPlaywrightCustomListingFetcher,
@@ -132,6 +137,13 @@ export function createContainer(config: AppConfig): AppContainer {
     new AvatureProvider(),
     new SapProvider(),
     new GoldmanProvider(),
+    new GoogleProvider({
+      listingFetcher: createPlaywrightGoogleListingFetcher(),
+    }),
+    new AmazonProvider(),
+    new AppleProvider({
+      listingFetcher: createPlaywrightAppleListingFetcher(),
+    }),
     new CustomProvider({
       listingFetcher: createPlaywrightCustomListingFetcher(),
     }),

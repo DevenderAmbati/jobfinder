@@ -40,6 +40,8 @@ const providers = new ProviderRegistry([
 6. Optionally seed a target company in `targetCompanies.ts`.  
 7. Run **Fetch now** and confirm Provider Health + Logs.
 
+Dedicated careers-site adapters already registered: `microsoft`, `goldman`, `google`, `amazon`, `apple`.
+
 ## Runtime behavior
 
 `FetchCompanyJobsUseCase` selects the provider, fetches, dedups, scores, notifies, then updates `ProviderHealth` / `ProviderLog`.

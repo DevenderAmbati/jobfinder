@@ -20,6 +20,9 @@ export type SupportedProvider =
   | 'avature'
   | 'sap'
   | 'goldman'
+  | 'google'
+  | 'amazon'
+  | 'apple'
   | 'custom';
 
 export type CompanyTier = 1 | 2 | 3 | 4;
@@ -902,14 +905,208 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     enabled: true,
     frequency: DEFAULT_COMPANY_FREQUENCY,
   },
+
+  // ── Instagram 30+ LPA list — verified boards (2026-08) ─────────────────
+  {
+    name: 'Snowflake',
+    tier: 2,
+    provider: 'ashby',
+    careerUrl: 'https://jobs.ashbyhq.com/snowflake',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Confluent',
+    tier: 2,
+    provider: 'ashby',
+    careerUrl: 'https://jobs.ashbyhq.com/confluent',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Plaid',
+    tier: 2,
+    provider: 'ashby',
+    careerUrl: 'https://jobs.ashbyhq.com/plaid',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Palantir',
+    tier: 2,
+    provider: 'lever',
+    careerUrl: 'https://jobs.lever.co/palantir',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Checkout.com',
+    tier: 2,
+    provider: 'ashby',
+    careerUrl: 'https://jobs.ashbyhq.com/checkout.com',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'UiPath',
+    tier: 2,
+    provider: 'ashby',
+    careerUrl: 'https://jobs.ashbyhq.com/uipath',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Canva',
+    tier: 2,
+    provider: 'smartrecruiters',
+    careerUrl: 'https://careers.smartrecruiters.com/Canva',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Turnitin',
+    tier: 2,
+    provider: 'smartrecruiters',
+    careerUrl: 'https://careers.smartrecruiters.com/TurnitinLLC',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'CrowdStrike',
+    tier: 2,
+    provider: 'workday',
+    careerUrl: 'https://crowdstrike.wd5.myworkdayjobs.com/crowdstrikecareers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Target',
+    tier: 2,
+    provider: 'workday',
+    careerUrl: 'https://target.wd5.myworkdayjobs.com/targetcareers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Workday',
+    tier: 2,
+    provider: 'workday',
+    careerUrl: 'https://workday.wd5.myworkdayjobs.com/Workday',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Walmart Global Tech',
+    tier: 2,
+    provider: 'workday',
+    careerUrl: 'https://walmart.wd504.myworkdayjobs.com/WalmartExternal',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Google',
+    tier: 1,
+    provider: 'google',
+    careerUrl:
+      'https://www.google.com/about/careers/applications/jobs/results/?location=India&q=Software%20Engineer',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Amazon',
+    tier: 1,
+    provider: 'amazon',
+    careerUrl:
+      'https://www.amazon.jobs/en/search.json?base_query=&country[]=IND&category[]=software-development&offset=0&result_limit=100&sort=relevant',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Apple',
+    tier: 1,
+    provider: 'apple',
+    careerUrl: 'https://jobs.apple.com/en-us/search?location=india-INDC',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Atlassian',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://www.atlassian.com/company/careers/all-jobs',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Intuit',
+    tier: 1,
+    provider: 'custom',
+    careerUrl: 'https://jobs.intuit.com/search-jobs',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'AMD',
+    tier: 4,
+    provider: 'custom',
+    careerUrl: 'https://careers.amd.com/careers-home/jobs',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Nutanix',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://careers.nutanix.com/en/jobs/',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'HSBC',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://www.hsbc.com/careers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Thoughtworks',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://www.thoughtworks.com/careers/jobs',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'Publicis Sapient',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://careers.publicissapient.com/',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
+  {
+    name: 'EPAM Systems',
+    tier: 2,
+    provider: 'custom',
+    careerUrl: 'https://www.epam.com/careers',
+    enabled: true,
+    frequency: DEFAULT_COMPANY_FREQUENCY,
+  },
 ];
 
 /** Still on your list, but blocked until we verify a board URL or harden a scraper. */
 export const UNSUPPORTED_TARGET_COMPANIES: UnsupportedTargetCompany[] = [
   {
-    name: 'Intuit',
-    tier: 1,
-    reason: 'Workday site path not verified (common paths return HTTP 422)',
+    name: 'Blinkit',
+    tier: 2,
+    reason:
+      'No public Greenhouse/Lever/Ashby/Workday board; careers page has no scrapable job list',
+  },
+  {
+    name: 'Dunzo',
+    tier: 2,
+    reason: 'Company effectively shut down — no active careers board',
   },
   {
     name: 'Darwinbox',
@@ -976,7 +1173,8 @@ export const UNSUPPORTED_TARGET_COMPANIES: UnsupportedTargetCompany[] = [
   {
     name: 'Uber',
     tier: 2,
-    reason: 'Workday site path unverified (common paths return HTTP 422)',
+    reason:
+      'iCIMS / careers.uber.com blocked for anonymous fetch (HTTP 406); no public target-ATS board',
   },
   {
     name: 'LinkedIn',

@@ -23,6 +23,9 @@ const PROVIDERS = [
   'avature',
   'sap',
   'goldman',
+  'google',
+  'amazon',
+  'apple',
   'custom',
 ] as const;
 
