@@ -1,4 +1,5 @@
-import { clearSession, getStoredToken } from './auth';
+import { clearSession } from './auth';
+import { getIdToken } from './firebase';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -20,7 +21,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData =
     typeof FormData !== 'undefined' && init?.body instanceof FormData;
-  const token = getStoredToken();
+  const token = await getIdToken();
   const response = await fetch(`/api${path}`, {
     ...init,
     headers: {

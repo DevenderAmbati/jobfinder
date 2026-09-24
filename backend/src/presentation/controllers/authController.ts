@@ -17,7 +17,12 @@ export function createAuthController(container: AppContainer) {
         const name = typeof body.name === 'string' ? body.name : undefined;
         const result = await container.auth.register({ email, password, name });
         res.status(201).json({
-          data: { user: serializeUser(result.user), token: result.token },
+          data: {
+            user: serializeUser(result.user),
+            token: result.token,
+            message:
+              'Account created. Sign in with Firebase Auth on the client to obtain an ID token.',
+          },
         });
       } catch (error) {
         next(error);
@@ -30,7 +35,11 @@ export function createAuthController(container: AppContainer) {
         const email = typeof body.email === 'string' ? body.email : '';
         const password = typeof body.password === 'string' ? body.password : '';
         if (!email || !password) {
-          throw new AppError('VALIDATION_ERROR', 'Email and password are required', 400);
+          throw new AppError(
+            'VALIDATION_ERROR',
+            'Email and password are required',
+            400,
+          );
         }
         const result = await container.auth.login({ email, password });
         res.status(200).json({

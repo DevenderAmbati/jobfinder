@@ -9,6 +9,16 @@ export interface ScheduleTickDeps {
   parseCronNext: (expression: string, currentDate: Date) => Date;
 }
 
+export interface ScheduleTickOptions {
+  /** When true, enqueue every enabled company regardless of lastRun / cron. */
+  force?: boolean;
+  /**
+   * When true, wait until the in-memory queue finishes all enqueued fetches.
+   * Keeps Cloud Run CPU allocated for the duration of the request.
+   */
+  wait?: boolean;
+}
+
 /**
  * Application orchestration for a scheduler tick.
  * Finds due companies and enqueues work — no fetch/match/notify here.
@@ -16,12 +26,17 @@ export interface ScheduleTickDeps {
 export class ScheduleTickUseCase {
   constructor(private readonly deps: ScheduleTickDeps) {}
 
-  async execute(now = new Date()): Promise<{ enqueued: string[] }> {
+  async execute(
+    now = new Date(),
+    options: ScheduleTickOptions = {},
+  ): Promise<{ enqueued: string[]; forced: boolean }> {
+    const force = options.force === true;
     const companies = await this.deps.companies.findDueForRun(now);
     const enqueued: string[] = [];
 
     for (const company of companies) {
       if (
+        !force &&
         !isCompanyDue(company, now, this.deps.parseCronNext)
       ) {
         continue;
@@ -36,9 +51,14 @@ export class ScheduleTickUseCase {
         companyId: company.id,
         name: company.name,
         queueItemId: id,
+        force,
       });
     }
 
-    return { enqueued };
+    if (options.wait && enqueued.length > 0) {
+      await this.deps.queue.idle();
+    }
+
+    return { enqueued, forced: force };
   }
 }

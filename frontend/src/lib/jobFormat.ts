@@ -305,7 +305,11 @@ export function isIndiaLocation(location: string | null | undefined): boolean {
   if (!normalized) {
     return false;
   }
-  return INDIA_LOCATION_TOKENS.some((token) => normalized.includes(token));
+  if (INDIA_LOCATION_TOKENS.some((token) => normalized.includes(token))) {
+    return true;
+  }
+  // Amazon-style country code fragments: "IN", "IN, KA, Bengaluru", "KA, IN"
+  return /(^|,\s*)in(\s*,|$)/i.test(normalized);
 }
 
 /**

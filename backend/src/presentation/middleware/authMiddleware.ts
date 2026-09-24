@@ -8,26 +8,29 @@ export type AuthedRequest = Request & {
 };
 
 /**
- * Requires `Authorization: Bearer <jwt>` on protected routes.
+ * Requires `Authorization: Bearer <Firebase ID token>` on protected routes.
  */
 export function createAuthMiddleware(auth: AuthService) {
   return (req: Request, _res: Response, next: NextFunction): void => {
-    try {
-      const header = req.headers.authorization;
-      if (!header?.startsWith('Bearer ')) {
-        throw new AppError('UNAUTHORIZED', 'Sign in required', 401);
+    void (async () => {
+      try {
+        const header = req.headers.authorization;
+        if (!header?.startsWith('Bearer ')) {
+          throw new AppError('UNAUTHORIZED', 'Sign in required', 401);
+        }
+        const token = header.slice('Bearer '.length).trim();
+        if (!token) {
+          throw new AppError('UNAUTHORIZED', 'Sign in required', 401);
+        }
+        const payload = await auth.verify(token);
+        await auth.ensureProfile(payload);
+        (req as AuthedRequest).userId = payload.sub;
+        (req as AuthedRequest).userEmail = payload.email;
+        next();
+      } catch (error) {
+        next(error);
       }
-      const token = header.slice('Bearer '.length).trim();
-      if (!token) {
-        throw new AppError('UNAUTHORIZED', 'Sign in required', 401);
-      }
-      const payload = auth.verify(token);
-      (req as AuthedRequest).userId = payload.sub;
-      (req as AuthedRequest).userEmail = payload.email;
-      next();
-    } catch (error) {
-      next(error);
-    }
+    })();
   };
 }
 

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Request, Response, NextFunction } from 'express';
 import type { AppContainer } from '../../infrastructure/di/container.js';
+import { getFirestore } from '../../infrastructure/firebase/admin.js';
 import { createTtlCache } from '../../shared/utils/ttlCache.js';
 
 const providerStatusCache = createTtlCache<{
@@ -21,10 +22,10 @@ export function createHealthController(container: AppContainer) {
   ): Promise<void> {
     const started = Date.now();
     try {
-      await container.prisma.$queryRaw`SELECT 1`;
+      await getFirestore().collection('meta').doc('health').get();
       res.status(200).json({
         status: 'ok',
-        database: 'up',
+        database: 'firestore',
         uptimeSec: Math.floor(process.uptime()),
         nodeEnv: container.config.nodeEnv,
         geminiEnabled: container.config.geminiEnabled,

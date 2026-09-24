@@ -10,11 +10,17 @@ import {
 import { api, setUnauthorizedHandler, type AuthUserDto } from '../lib/api';
 import {
   clearSession,
-  getStoredToken,
   getStoredUser,
-  persistSession,
+  persistUser,
   type AuthUser,
 } from '../lib/auth';
+import {
+  firebaseLogin,
+  firebaseLogout,
+  firebaseRegister,
+  onFirebaseAuth,
+  toAuthUser,
+} from '../lib/firebase';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -26,80 +32,70 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+async function syncProfile(): Promise<AuthUser> {
+  const res = await api<{ data: AuthUserDto }>('/auth/me');
+  persistUser(res.data);
+  return res.data;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
   const [ready, setReady] = useState(false);
 
   const logout = useCallback(() => {
+    void firebaseLogout();
     clearSession();
     setUser(null);
   }, []);
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
+      clearSession();
       setUser(null);
     });
     return () => setUnauthorizedHandler(null);
   }, []);
 
   useEffect(() => {
-    const token = getStoredToken();
-    if (!token) {
-      setUser(null);
-      setReady(true);
-      return;
-    }
-
-    let cancelled = false;
-    void api<{ data: AuthUserDto }>('/auth/me')
-      .then((res) => {
-        if (cancelled) {
-          return;
-        }
-        const next = res.data;
-        persistSession(token, next);
-        setUser(next);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          clearSession();
-          setUser(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
+    const unsub = onFirebaseAuth((fbUser) => {
+      void (async () => {
+        try {
+          if (!fbUser) {
+            clearSession();
+            setUser(null);
+            return;
+          }
+          persistUser(toAuthUser(fbUser));
+          const profile = await syncProfile();
+          setUser(profile);
+        } catch {
+          if (fbUser) {
+            setUser(toAuthUser(fbUser));
+          } else {
+            clearSession();
+            setUser(null);
+          }
+        } finally {
           setReady(true);
         }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      })();
+    });
+    return unsub;
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await api<{ data: { user: AuthUserDto; token: string } }>(
-      '/auth/login',
-      {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      },
-    );
-    persistSession(res.data.token, res.data.user);
-    setUser(res.data.user);
+    const fbUser = await firebaseLogin(email, password);
+    persistUser(toAuthUser(fbUser));
+    const profile = await syncProfile();
+    setUser(profile);
   }, []);
 
   const register = useCallback(
     async (email: string, password: string, name?: string) => {
-      const res = await api<{ data: { user: AuthUserDto; token: string } }>(
-        '/auth/register',
-        {
-          method: 'POST',
-          body: JSON.stringify({ email, password, name }),
-        },
-      );
-      persistSession(res.data.token, res.data.user);
-      setUser(res.data.user);
+      const fbUser = await firebaseRegister(email, password, name);
+      persistUser(toAuthUser(fbUser));
+      const profile = await syncProfile();
+      setUser(profile);
     },
     [],
   );

@@ -19,4 +19,7 @@ export interface JobQueue {
   enqueue(item: Omit<QueueWorkItem, 'id' | 'enqueuedAt'>): Promise<string>;
   start(handler: QueueWorkHandler): void;
   stop(): void;
+  size(): number;
+  /** Resolves when the queue is empty and not processing an item. */
+  idle(): Promise<void>;
 }

@@ -20,8 +20,8 @@ import { loadConfig } from './shared/config/env.js';
 import { configureLogger, logger } from './shared/utils/logger.js';
 import { registerProcessHandlers } from './shared/process/registerProcessHandlers.js';
 import { createContainer } from './infrastructure/di/container.js';
-import { prisma } from './infrastructure/database/prismaClient.js';
-import { ensureBootstrapOwner } from './infrastructure/database/ensureBootstrapOwner.js';
+import { initFirebaseAdmin } from './infrastructure/firebase/admin.js';
+import { ensureBootstrapOwner } from './infrastructure/firebase/ensureBootstrapOwner.js';
 import {
   closeAllPlaywrightBrowsers,
   configurePlaywrightRuntime,
@@ -37,6 +37,7 @@ configurePlaywrightRuntime({
   headless: config.playwrightHeadless,
   maxConcurrent: config.playwrightMaxConcurrent,
 });
+initFirebaseAdmin(config.firebaseProjectId);
 const container = createContainer(config);
 const app = express();
 
@@ -51,7 +52,10 @@ app.use(
 );
 app.use('/api', apiNotFoundHandler);
 
-const publicDir = resolveFrontendPublicDir();
+// Production UI is Firebase Hosting; local/dev may still serve a bundled SPA.
+const serveStatic =
+  config.nodeEnv !== 'production' || process.env.SERVE_STATIC_FRONTEND === 'true';
+const publicDir = serveStatic ? resolveFrontendPublicDir() : null;
 if (publicDir) {
   mountFrontendStatic(app, publicDir);
 } else {
@@ -62,7 +66,6 @@ app.use(errorHandler);
 
 export function startServer(): Server {
   container.startWorkers();
-  // Bind all interfaces — required behind Railway/Docker (default can miss healthchecks).
   const server = app.listen(config.port, '0.0.0.0', () => {
     logger.info('Server listening', {
       port: config.port,
@@ -71,13 +74,31 @@ export function startServer(): Server {
       logLevel: config.logLevel,
       logToFiles: config.logToFiles,
       logDir: config.logDir,
-      ui: publicDir ?? 'not-built',
+      ui: publicDir ?? 'firebase-hosting',
+      firestore: config.firebaseProjectId,
     });
-    void ensureBootstrapOwner().catch((error: unknown) => {
+    void ensureBootstrapOwner(container.users).catch((error: unknown) => {
       logger.error('Bootstrap owner failed', {
         message: error instanceof Error ? error.message : String(error),
       });
     });
+
+    if (
+      config.telegramWebhookMode &&
+      config.telegramBotToken &&
+      process.env.TELEGRAM_WEBHOOK_URL?.trim()
+    ) {
+      void container.telegramLink
+        .setWebhook(
+          process.env.TELEGRAM_WEBHOOK_URL.trim(),
+          config.telegramWebhookSecret || undefined,
+        )
+        .catch((error: unknown) => {
+          logger.error('Telegram setWebhook failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+    }
   });
 
   registerProcessHandlers({
@@ -86,7 +107,6 @@ export function startServer(): Server {
       stopWorkers: () => container.stopWorkers(),
       disconnect: async () => {
         await closeAllPlaywrightBrowsers();
-        await prisma.$disconnect();
       },
     },
   });

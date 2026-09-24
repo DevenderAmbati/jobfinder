@@ -6,7 +6,7 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export interface AppConfig {
   port: number;
   nodeEnv: string;
-  databaseUrl: string;
+  firebaseProjectId: string;
   logLevel: LogLevel;
   /** Persist channel logs under logDir (error/cron/provider/telegram). */
   logToFiles: boolean;
@@ -23,11 +23,19 @@ export interface AppConfig {
   maxNotificationsPerRun: number;
   telegramBotToken: string;
   telegramChatId: string;
+  /** When true, skip getUpdates and expect POST /api/telegram/webhook. */
+  telegramWebhookMode: boolean;
+  /** Secret token Telegram sends as X-Telegram-Bot-Api-Secret-Token. */
+  telegramWebhookSecret: string;
   /**
    * Default cron for the process scheduler and new companies without a frequency.
    * Env: CRON_FREQUENCY or CRON_DEFAULT_EXPRESSION.
    */
   cronDefaultExpression: string;
+  /** When false (production default), rely on Cloud Scheduler instead of node-cron. */
+  enableInProcessCron: boolean;
+  /** OIDC / shared secret for POST /api/internal/schedule-tick. */
+  internalSchedulerSecret: string;
   playwrightHeadless: boolean;
   playwrightMaxConcurrent: number;
   /** Comma-separated origins, `*` for reflect-all, or empty for same-origin (prod) / open (dev). */
@@ -36,8 +44,8 @@ export interface AppConfig {
   rateLimitMax: number;
   rateLimitFetchMax: number;
   requestLogging: boolean;
-  /** HMAC secret for session JWTs. */
-  jwtSecret: string;
+  /** Firebase Storage bucket for resume PDFs (defaults to project bucket). */
+  storageBucket: string;
 }
 
 const LOG_LEVELS = new Set<LogLevel>(['debug', 'info', 'warn', 'error']);
@@ -46,9 +54,17 @@ const LOG_LEVELS = new Set<LogLevel>(['debug', 'info', 'warn', 'error']);
  * Load and validate config from environment. Never hardcode secrets.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const databaseUrl = env.DATABASE_URL?.trim();
-  if (!databaseUrl) {
-    throw new AppError('CONFIG_ERROR', 'DATABASE_URL is required', 500);
+  const firebaseProjectId =
+    env.FIREBASE_PROJECT_ID?.trim() ||
+    env.GCLOUD_PROJECT?.trim() ||
+    env.GOOGLE_CLOUD_PROJECT?.trim() ||
+    '';
+  if (!firebaseProjectId && env.NODE_ENV === 'production') {
+    throw new AppError(
+      'CONFIG_ERROR',
+      'FIREBASE_PROJECT_ID is required in production',
+      500,
+    );
   }
 
   const port = Number(env.PORT ?? 3001);
@@ -64,7 +80,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const logLevel = parseLogLevel(env.LOG_LEVEL, nodeEnv);
   const logToFiles = parseBool(
     env.LOG_TO_FILES,
-    // Files help local debugging; Railway should set LOG_TO_FILES=false unless a volume is mounted.
     nodeEnv !== 'production',
   );
   const logDir = env.LOG_DIR?.trim() || 'logs';
@@ -142,32 +157,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   );
   const requestLogging = parseBool(env.REQUEST_LOGGING, true);
 
-  const jwtSecret =
-    env.JWT_SECRET?.trim() ||
-    (nodeEnv === 'production' ? '' : 'dev-only-jwt-secret-change-me');
-  if (!jwtSecret) {
-    throw new AppError(
-      'CONFIG_ERROR',
-      'JWT_SECRET is required in production',
-      500,
-    );
-  }
-  if (nodeEnv === 'production' && jwtSecret.length < 24) {
-    throw new AppError(
-      'CONFIG_ERROR',
-      'JWT_SECRET must be at least 24 characters in production',
-      500,
-    );
-  }
+  const telegramWebhookMode = parseBool(
+    env.TELEGRAM_WEBHOOK_MODE,
+    nodeEnv === 'production',
+  );
+  const enableInProcessCron = parseBool(
+    env.ENABLE_IN_PROCESS_CRON,
+    nodeEnv !== 'production',
+  );
 
   return {
     port,
     nodeEnv,
-    databaseUrl,
+    firebaseProjectId:
+      firebaseProjectId || 'demo-jobfinder',
     logLevel,
     logToFiles,
     logDir,
-    // Enabled in non-production by default; production requires explicit flag.
     enableDevTools:
       env.ENABLE_DEV_TOOLS === 'true' || nodeEnv !== 'production',
     geminiEnabled,
@@ -178,7 +184,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     maxNotificationsPerRun,
     telegramBotToken: env.TELEGRAM_BOT_TOKEN?.trim() ?? '',
     telegramChatId: env.TELEGRAM_CHAT_ID?.trim() ?? '',
+    telegramWebhookMode,
+    telegramWebhookSecret: env.TELEGRAM_WEBHOOK_SECRET?.trim() ?? '',
     cronDefaultExpression,
+    enableInProcessCron,
+    internalSchedulerSecret: env.INTERNAL_SCHEDULER_SECRET?.trim() ?? '',
     playwrightHeadless,
     playwrightMaxConcurrent,
     corsOrigin,
@@ -186,7 +196,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     rateLimitMax,
     rateLimitFetchMax,
     requestLogging,
-    jwtSecret,
+    storageBucket:
+      env.FIREBASE_STORAGE_BUCKET?.trim() ||
+      (firebaseProjectId
+        ? `${firebaseProjectId}.appspot.com`
+        : ''),
   };
 }
 

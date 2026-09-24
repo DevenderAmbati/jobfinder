@@ -15,16 +15,17 @@ import type { JobQueue } from '../../domain/ports/JobQueue.js';
 import type { JobMatcher } from '../../domain/ports/JobMatcher.js';
 import type { Notifier } from '../../domain/ports/Notifier.js';
 import { InMemoryJobQueue } from '../queue/InMemoryJobQueue.js';
-import { PrismaCompanyRepository } from '../database/PrismaCompanyRepository.js';
-import { PrismaJobRepository } from '../database/PrismaJobRepository.js';
-import { PrismaRuleRepository } from '../database/PrismaRuleRepository.js';
-import { PrismaResumeRepository } from '../database/PrismaResumeRepository.js';
-import { PrismaUserRepository } from '../database/PrismaUserRepository.js';
-import { PrismaPromptTemplateRepository } from '../database/PrismaPromptTemplateRepository.js';
-import { PrismaProviderHealthRepository } from '../database/PrismaProviderHealthRepository.js';
-import { PrismaLogRepository } from '../database/PrismaLogRepository.js';
-import { PrismaApplicationRepository } from '../database/PrismaApplicationRepository.js';
-import { prisma } from '../database/prismaClient.js';
+import { initFirebaseAdmin } from '../firebase/admin.js';
+import { FirestoreCompanyRepository } from '../firebase/FirestoreCompanyRepository.js';
+import { FirestoreJobRepository } from '../firebase/FirestoreJobRepository.js';
+import { FirestoreRuleRepository } from '../firebase/FirestoreRuleRepository.js';
+import { FirestoreResumeRepository } from '../firebase/FirestoreResumeRepository.js';
+import { FirestoreUserRepository } from '../firebase/FirestoreUserRepository.js';
+import { FirestorePromptTemplateRepository } from '../firebase/FirestorePromptTemplateRepository.js';
+import { FirestoreProviderHealthRepository } from '../firebase/FirestoreProviderHealthRepository.js';
+import { FirestoreLogRepository } from '../firebase/FirestoreLogRepository.js';
+import { FirestoreApplicationRepository } from '../firebase/FirestoreApplicationRepository.js';
+import { FirestoreAnalytics } from '../firebase/FirestoreAnalytics.js';
 import { AuthService } from '../../application/services/AuthService.js';
 import { TelegramLinkService } from '../../application/services/TelegramLinkService.js';
 import { ProviderRegistry } from '../providers/ProviderRegistry.js';
@@ -67,7 +68,6 @@ import { logger } from '../../shared/utils/logger.js';
 
 export interface AppContainer {
   config: AppConfig;
-  prisma: typeof prisma;
   queue: JobQueue;
   users: UserRepository;
   auth: AuthService;
@@ -80,6 +80,7 @@ export interface AppContainer {
   providerHealth: ProviderHealthRepository;
   logs: LogRepository;
   applications: ApplicationRepository;
+  analytics: FirestoreAnalytics;
   jobDeduplication: JobDeduplicationService;
   ruleEngine: RuleEngine;
   relevance: RelevanceScorer;
@@ -97,27 +98,28 @@ export interface AppContainer {
 }
 
 /**
- * Composition root — wires domain ports to infrastructure adapters.
+ * Composition root — wires domain ports to Firestore + Firebase Auth adapters.
  */
 export function createContainer(config: AppConfig): AppContainer {
+  initFirebaseAdmin(config.firebaseProjectId);
+
   const queue = new InMemoryJobQueue();
-  const users = new PrismaUserRepository();
-  const auth = new AuthService({
-    users,
-    jwtSecret: config.jwtSecret,
-  });
+  const users = new FirestoreUserRepository();
+  const auth = new AuthService({ users });
   const telegramLink = new TelegramLinkService({
     botToken: config.telegramBotToken,
     users,
+    webhookMode: config.telegramWebhookMode,
   });
-  const companies = new PrismaCompanyRepository();
-  const jobs = new PrismaJobRepository();
-  const rules = new PrismaRuleRepository();
-  const resumes = new PrismaResumeRepository();
-  const prompts = new PrismaPromptTemplateRepository();
-  const providerHealth = new PrismaProviderHealthRepository();
-  const logs = new PrismaLogRepository();
-  const applications = new PrismaApplicationRepository();
+  const companies = new FirestoreCompanyRepository();
+  const jobs = new FirestoreJobRepository();
+  const rules = new FirestoreRuleRepository();
+  const resumes = new FirestoreResumeRepository();
+  const prompts = new FirestorePromptTemplateRepository();
+  const providerHealth = new FirestoreProviderHealthRepository();
+  const logs = new FirestoreLogRepository();
+  const applications = new FirestoreApplicationRepository();
+  const analytics = new FirestoreAnalytics();
   const jobDeduplication = new JobDeduplicationService();
   const ruleEngine = new RuleEngine();
   const relevance = new RelevanceScorer();
@@ -159,8 +161,6 @@ export function createContainer(config: AppConfig): AppContainer {
       : null;
   const matcher = new ResilientJobMatcher(geminiMatcher, keywordMatcher);
 
-  // Two tiers: the keyword matcher is free so it can score every eligible job,
-  // while the resilient (Gemini) matcher is reserved for high-fit jobs.
   const scoring = new JobScoringService({
     ruleEngine,
     relevance,
@@ -220,9 +220,8 @@ export function createContainer(config: AppConfig): AppContainer {
   );
 
   const devTools = new DevToolsService({
-    prisma,
-    companies,
     jobs,
+    companies,
     rules,
     resumes,
     logs,
@@ -241,8 +240,17 @@ export function createContainer(config: AppConfig): AppContainer {
         await fetchCompanyJobs.execute(item.payload.companyId);
       }
     });
-    scheduler.start();
-    telegramLink.startPolling();
+    // Cloud Scheduler hits /api/internal/schedule-tick in production.
+    if (config.enableInProcessCron) {
+      scheduler.start();
+    } else {
+      logger.info('In-process cron disabled — use Cloud Scheduler');
+    }
+    if (config.telegramWebhookMode) {
+      logger.info('Telegram webhook mode — skipping getUpdates poller');
+    } else {
+      telegramLink.startPolling();
+    }
   };
 
   const stopWorkers = (): void => {
@@ -253,7 +261,6 @@ export function createContainer(config: AppConfig): AppContainer {
 
   return {
     config,
-    prisma,
     queue,
     users,
     auth,
@@ -266,6 +273,7 @@ export function createContainer(config: AppConfig): AppContainer {
     providerHealth,
     logs,
     applications,
+    analytics,
     jobDeduplication,
     ruleEngine,
     relevance,

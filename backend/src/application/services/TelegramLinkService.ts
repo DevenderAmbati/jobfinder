@@ -21,6 +21,8 @@ interface TelegramLinkServiceDeps {
   botToken: string;
   users: UserRepository;
   fetchImpl?: typeof fetch;
+  /** When true, skip getUpdates; Cloud Run receives POST /api/telegram/webhook. */
+  webhookMode?: boolean;
 }
 
 interface TelegramUpdate {
@@ -138,12 +140,42 @@ export class TelegramLinkService {
   }
 
   startPolling(): void {
-    if (!this.isConfigured || this.running) {
+    if (!this.isConfigured || this.running || this.deps.webhookMode) {
       return;
     }
     this.running = true;
     this.loopPromise = this.pollLoop();
     logger.telegram.info('Telegram link poller started');
+  }
+
+  /**
+   * Register Telegram webhook URL (production / Cloud Run).
+   */
+  async setWebhook(url: string, secretToken?: string): Promise<void> {
+    if (!this.isConfigured) {
+      return;
+    }
+    const body: Record<string, unknown> = {
+      url,
+      allowed_updates: ['message'],
+      drop_pending_updates: false,
+    };
+    if (secretToken) {
+      body.secret_token = secretToken;
+    }
+    const response = await this.fetchImpl(
+      `https://api.telegram.org/bot${this.deps.botToken}/setWebhook`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`setWebhook HTTP ${response.status}: ${text}`);
+    }
+    logger.telegram.info('Telegram webhook registered', { url });
   }
 
   async stopPolling(): Promise<void> {

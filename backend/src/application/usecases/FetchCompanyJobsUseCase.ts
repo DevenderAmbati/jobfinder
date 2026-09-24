@@ -15,6 +15,7 @@ import type { ProviderRegistry } from '../../infrastructure/providers/ProviderRe
 import { logger } from '../../shared/utils/logger.js';
 import { AppError } from '../../shared/errors/AppError.js';
 import { resolveExperienceLabel } from '../../shared/utils/experience.js';
+import { shouldPersistJobLocation } from '../../domain/services/indiaLocation.js';
 
 export interface FetchCompanyJobsResult {
   companyId: string;
@@ -24,6 +25,8 @@ export interface FetchCompanyJobsResult {
   skippedDuplicates: number;
   /** Jobs vetoed as ineligible — excluded title or off the company allow-list. */
   skippedByRules: number;
+  /** Jobs skipped because location is present and not India. */
+  skippedNonIndia: number;
   /** Eligible jobs that received a score and are now visible in the feed. */
   scored: number;
   /** Jobs that cleared the fit floor and spent an LLM call. */
@@ -68,6 +71,7 @@ export class FetchCompanyJobsUseCase {
     let notified = 0;
     let skippedDuplicates = 0;
     let skippedByRules = 0;
+    let skippedNonIndia = 0;
     let scored = 0;
     let escalated = 0;
     let errorMessage: string | null = null;
@@ -108,6 +112,16 @@ export class FetchCompanyJobsUseCase {
 
         if (await this.deps.jobs.existsByDedupHash(hash.value)) {
           skippedDuplicates += 1;
+          continue;
+        }
+
+        if (!shouldPersistJobLocation(normalized.location)) {
+          skippedNonIndia += 1;
+          logger.debug('Skipping non-India job at ingest', {
+            title: normalized.title,
+            location: normalized.location,
+            companyId: company.id,
+          });
           continue;
         }
 
@@ -270,6 +284,7 @@ export class FetchCompanyJobsUseCase {
         notified,
         skippedDuplicates,
         skippedByRules,
+        skippedNonIndia,
         scored,
         escalated,
       };

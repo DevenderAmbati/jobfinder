@@ -7,6 +7,5 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
-# Start is defined by Dockerfile CMD:
-#   npx prisma migrate deploy && node dist/server.js
-# Do not add seed to the start command — run seed once manually if needed.
+# Preferred deploy target is Cloud Run — see docs/FIREBASE.md
+# Start is defined by Dockerfile CMD: node dist/server.js

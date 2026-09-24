@@ -46,6 +46,12 @@ export class InMemoryJobQueue implements JobQueue {
     return this.running;
   }
 
+  async idle(): Promise<void> {
+    while (this.processing || this.items.length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
   private async pump(): Promise<void> {
     if (!this.running || !this.handler || this.processing) {
       return;

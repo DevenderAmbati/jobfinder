@@ -1,22 +1,22 @@
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import type { AuthUser } from '../../domain/entities/User.js';
 import type { UserRepository } from '../../domain/repositories/UserRepository.js';
+import { getAuth } from '../../infrastructure/firebase/admin.js';
 import { AppError } from '../../shared/errors/AppError.js';
-
-const BCRYPT_ROUNDS = 10;
-const TOKEN_TTL = '30d';
 
 export interface AuthTokenPayload {
   sub: string;
   email: string;
+  name?: string | null;
 }
 
 export interface AuthServiceDeps {
   users: UserRepository;
-  jwtSecret: string;
 }
 
+/**
+ * Firebase Auth identity. Clients obtain ID tokens via the Firebase web SDK;
+ * the API verifies them with the Admin SDK and ensures a Firestore profile.
+ */
 export class AuthService {
   constructor(private readonly deps: AuthServiceDeps) {}
 
@@ -40,54 +40,72 @@ export class AuthService {
 
     const existing = await this.deps.users.findByEmail(email);
     if (existing) {
-      throw new AppError('CONFLICT', 'An account with that email already exists', 409);
+      throw new AppError(
+        'CONFLICT',
+        'An account with that email already exists',
+        409,
+      );
     }
 
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const user = await this.deps.users.create({
       email,
-      passwordHash,
+      password,
       name: input.name?.trim() || null,
     });
-    return { user, token: this.sign(user) };
+
+    // Client should sign in with Firebase SDK; return empty token placeholder.
+    // Prefer frontend Firebase Auth — this path is for API/tooling only.
+    return { user, token: '' };
   }
 
-  async login(input: {
+  async login(_input: {
     email: string;
     password: string;
   }): Promise<{ user: AuthUser; token: string }> {
-    const email = normalizeEmail(input.email);
-    const user = await this.deps.users.findByEmail(email);
-    if (!user) {
-      throw new AppError('UNAUTHORIZED', 'Invalid email or password', 401);
-    }
-    const ok = await bcrypt.compare(input.password, user.passwordHash);
-    if (!ok) {
-      throw new AppError('UNAUTHORIZED', 'Invalid email or password', 401);
-    }
-    const authUser: AuthUser = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-    };
-    return { user: authUser, token: this.sign(authUser) };
+    throw new AppError(
+      'UNAUTHORIZED',
+      'Sign in with Firebase Auth on the client, then call /api/auth/me with an ID token',
+      401,
+    );
   }
 
-  verify(token: string): AuthTokenPayload {
+  async verify(token: string): Promise<AuthTokenPayload> {
     try {
-      const payload = jwt.verify(token, this.deps.jwtSecret) as AuthTokenPayload;
-      if (!payload?.sub || !payload.email) {
+      const decoded = await getAuth().verifyIdToken(token);
+      const email = decoded.email?.trim().toLowerCase();
+      if (!decoded.uid || !email) {
         throw new AppError('UNAUTHORIZED', 'Invalid token', 401);
       }
-      return payload;
-    } catch {
+      return {
+        sub: decoded.uid,
+        email,
+        name: decoded.name ?? null,
+      };
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
       throw new AppError('UNAUTHORIZED', 'Invalid or expired token', 401);
     }
   }
 
-  private sign(user: AuthUser): string {
-    const payload: AuthTokenPayload = { sub: user.id, email: user.email };
-    return jwt.sign(payload, this.deps.jwtSecret, { expiresIn: TOKEN_TTL });
+  async ensureProfile(payload: AuthTokenPayload): Promise<AuthUser> {
+    if (this.deps.users.ensureProfile) {
+      return this.deps.users.ensureProfile({
+        uid: payload.sub,
+        email: payload.email,
+        name: payload.name ?? null,
+      });
+    }
+    const existing = await this.deps.users.findById(payload.sub);
+    if (existing) {
+      return existing;
+    }
+    return this.deps.users.create({
+      uid: payload.sub,
+      email: payload.email,
+      name: payload.name ?? null,
+    });
   }
 }
 

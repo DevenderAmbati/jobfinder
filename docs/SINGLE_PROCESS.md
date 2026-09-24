@@ -1,32 +1,9 @@
-# Single-process UI (Step 2)
+# Single-process notes
 
-Production serves the Vite build from the Express process — no separate frontend host.
+Historically Jobfinder ran Express + SPA + cron + Playwright in one process on Railway.
 
-```
-Internet → Express (:PORT)
-            ├── /api/*     REST + health
-            ├── static     backend/public (copied from frontend/dist)
-            └── SPA        index.html for client routes
-```
+**Current model:** SPA on Firebase Hosting; API/worker (Express + Playwright + in-memory queue) on **one** Cloud Run service with `min-instances=1` so Telegram webhooks and the in-memory fetch queue stay consistent.
 
-## Local development (unchanged)
-
-From repo root (or `cd` into each package):
-
-```bash
-npm run dev          # API only (no UI bundle required)
-npm run dev:web      # Vite on :5173, proxies /api → :3001
-```
-
-## Production / preview on one port
-
-```bash
-npm run build    # builds frontend → copies to public/ → compiles TypeScript
-npm run start    # http://localhost:3001  (UI + /api)
-npm run migrate  # prisma migrate deploy (run before first start / on deploy)
-npm run seed     # optional catalog seed — not on every deploy
-```
-
-Server-only compile (CI typecheck path): `npm run build:server`.
-
-`resolveFrontendPublicDir()` looks for `backend/public/index.html`, then `frontend/dist/index.html`. If neither exists, the API still starts (useful for API-only local runs).
+- Production cron: Cloud Scheduler → `POST /api/internal/schedule-tick`
+- Local cron: `ENABLE_IN_PROCESS_CRON=true` (default outside production)
+- Seed once: `npm run seed:firestore`

@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { AppContainer } from '../../infrastructure/di/container.js';
 import { AppError } from '../../shared/errors/AppError.js';
 import { logger } from '../../shared/utils/logger.js';
+import { uploadResumePdf } from '../../infrastructure/firebase/storageResume.js';
 import { requireUserId } from '../middleware/authMiddleware.js';
 
 function serializeResume(resume: {
@@ -55,9 +56,15 @@ export function createResumeController(container: AppContainer) {
         }
 
         const file = (req as Request & { file?: Express.Multer.File }).file;
-        const originalPdfPath = file
-          ? file.path
-          : (existing?.originalPdfPath ?? null);
+        let originalPdfPath = existing?.originalPdfPath ?? null;
+        if (file?.buffer?.length) {
+          originalPdfPath = await uploadResumePdf({
+            userId,
+            buffer: file.buffer,
+            originalName: file.originalname || 'resume.pdf',
+            bucket: container.config.storageBucket || undefined,
+          });
+        }
 
         const resume = await container.resumes.upsertCurrent(userId, {
           originalPdfPath,
@@ -66,7 +73,6 @@ export function createResumeController(container: AppContainer) {
           embedding: existing?.embedding ?? null,
         });
 
-        // Recompute this user's JobMatch rows against the shared catalog.
         void container.rescoreJobs
           .execute({ userId })
           .catch((error: unknown) => {

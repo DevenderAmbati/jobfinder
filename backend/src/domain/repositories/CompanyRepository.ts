@@ -17,7 +17,7 @@ export interface CompanyUpdateInput {
 }
 
 /**
- * Persistence contract for companies. Implemented by Prisma in infrastructure.
+ * Persistence contract for companies. Implemented by Firestore in infrastructure.
  */
 export interface CompanyRepository {
   findAll(): Promise<Company[]>;

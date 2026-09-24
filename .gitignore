@@ -4,8 +4,15 @@ dist/
 build/
 .env
 .env.local
+.env.*.local
 *.log
 backend/logs/
+backend/.secrets/
+
+# Service account keys (never commit)
+**/serviceAccount*.json
+**/*-firebase-adminsdk-*.json
+
 
 # Prisma
 backend/prisma/*.db

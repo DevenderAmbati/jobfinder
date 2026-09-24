@@ -5,6 +5,7 @@ export interface AuthUser {
 }
 
 export interface UserRecord extends AuthUser {
+  /** Empty when using Firebase Auth (no local password hash). */
   passwordHash: string;
   createdAt: Date;
 }

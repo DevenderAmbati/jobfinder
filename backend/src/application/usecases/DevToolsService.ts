@@ -1,3 +1,4 @@
+import type { Firestore } from 'firebase-admin/firestore';
 import type { CompanyRepository } from '../../domain/repositories/CompanyRepository.js';
 import type { JobRepository } from '../../domain/repositories/JobRepository.js';
 import type { RuleRepository } from '../../domain/repositories/RuleRepository.js';
@@ -15,12 +16,13 @@ import type {
   RescoreJobsUseCase,
 } from './RescoreJobsUseCase.js';
 import type { ScheduleTickUseCase } from './ScheduleTickUseCase.js';
-import type { PrismaClient } from '@prisma/client';
+import type { FirestoreJobRepository } from '../../infrastructure/firebase/FirestoreJobRepository.js';
+import type { FirestoreLogRepository } from '../../infrastructure/firebase/FirestoreLogRepository.js';
+import { getFirestore } from '../../infrastructure/firebase/admin.js';
 import { AppError } from '../../shared/errors/AppError.js';
 import { logger } from '../../shared/utils/logger.js';
 
 export interface DevToolsDeps {
-  prisma: PrismaClient;
   companies: CompanyRepository;
   jobs: JobRepository;
   rules: RuleRepository;
@@ -60,10 +62,6 @@ export class DevToolsService {
     return this.deps.scheduleTick.execute();
   }
 
-  /**
-   * Rescores stored jobs. Deduplication means re-fetching skips existing rows,
-   * so this is the only way a scoring change reaches jobs already persisted.
-   */
   async rescoreJobs(options: RescoreJobsOptions) {
     return this.deps.rescoreJobs.execute(options);
   }
@@ -158,63 +156,58 @@ export class DevToolsService {
   }
 
   async aiOutput(jobId: string, userId: string) {
-    const row = await this.deps.prisma.job.findUnique({
-      where: { id: jobId },
-      include: { matches: { where: { userId }, take: 1 } },
-    });
-    if (!row) {
+    const job = await this.deps.jobs.findById(jobId, userId);
+    if (!job) {
       throw new AppError('JOB_NOT_FOUND', `Job ${jobId} not found`, 404);
     }
 
-    const match = row.matches[0];
     return {
-      jobId: row.id,
-      title: row.title,
-      matchScore: match?.matchScore ?? null,
-      matchSource: match?.matchSource ?? null,
-      matchReasons: parseJsonArray(match?.matchReasons ?? null),
-      missingSkills: parseJsonArray(match?.missingSkills ?? null),
-      interviewDifficulty: match?.interviewDifficulty ?? null,
-      salaryEstimate: match?.salaryEstimate ?? null,
-      recommendation: match?.recommendation ?? null,
+      jobId: job.id,
+      title: job.title,
+      matchScore: job.matchScore ?? null,
+      matchSource: job.matchSource ?? null,
+      matchReasons: job.matchReasons ?? [],
+      missingSkills: job.missingSkills ?? [],
+      interviewDifficulty: null,
+      salaryEstimate: job.salaryEstimate ?? null,
+      recommendation: job.recommendation ?? null,
     };
   }
 
   async clearLogs() {
-    const notifications = await this.deps.prisma.notificationLog.deleteMany();
-    const providers = await this.deps.prisma.providerLog.deleteMany();
-    logger.warn('Dev tools cleared logs', {
-      notifications: notifications.count,
-      providers: providers.count,
-    });
+    const logs = this.deps.logs as FirestoreLogRepository;
+    const notifications = await logs.deleteAllNotificationLogs();
+    const providers = await logs.deleteAllProviderLogs();
+    logger.warn('Dev tools cleared logs', { notifications, providers });
     return {
-      deletedNotificationLogs: notifications.count,
-      deletedProviderLogs: providers.count,
+      deletedNotificationLogs: notifications,
+      deletedProviderLogs: providers,
     };
   }
 
   async clearDatabase() {
-    // Keep companies, rules, users/resumes, prompts, provider health.
-    const applications = await this.deps.prisma.application.deleteMany();
-    const matches = await this.deps.prisma.jobMatch.deleteMany();
-    const notifications = await this.deps.prisma.notificationLog.deleteMany();
-    const providerLogs = await this.deps.prisma.providerLog.deleteMany();
-    const jobs = await this.deps.prisma.job.deleteMany();
+    const jobsRepo = this.deps.jobs as FirestoreJobRepository;
+    const logs = this.deps.logs as FirestoreLogRepository;
+
+    const appsDeleted = await deleteCollectionGroup(getFirestore(), 'applications');
+    const jobData = await jobsRepo.deleteAllJobsAndMatches();
+    const notifications = await logs.deleteAllNotificationLogs();
+    const providerLogs = await logs.deleteAllProviderLogs();
 
     logger.warn('Dev tools cleared database job data', {
-      applications: applications.count,
-      matches: matches.count,
-      notifications: notifications.count,
-      providerLogs: providerLogs.count,
-      jobs: jobs.count,
+      applications: appsDeleted,
+      matches: jobData.matches,
+      notifications,
+      providerLogs,
+      jobs: jobData.jobs,
     });
 
     return {
-      deletedApplications: applications.count,
-      deletedJobMatches: matches.count,
-      deletedNotificationLogs: notifications.count,
-      deletedProviderLogs: providerLogs.count,
-      deletedJobs: jobs.count,
+      deletedApplications: appsDeleted,
+      deletedJobMatches: jobData.matches,
+      deletedNotificationLogs: notifications,
+      deletedProviderLogs: providerLogs,
+      deletedJobs: jobData.jobs,
       preserved: [
         'companies',
         'rules',
@@ -237,17 +230,21 @@ export class DevToolsService {
   }
 }
 
-function parseJsonArray(raw: string | null): string[] {
-  if (!raw) {
-    return [];
-  }
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
+async function deleteCollectionGroup(
+  db: Firestore,
+  name: string,
+): Promise<number> {
+  let deleted = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const snap = await db.collectionGroup(name).limit(400).get();
+    if (snap.empty) break;
+    const batch = db.batch();
+    for (const doc of snap.docs) {
+      batch.delete(doc.ref);
+      deleted += 1;
     }
-    return parsed.filter((item): item is string => typeof item === 'string');
-  } catch {
-    return [];
+    await batch.commit();
   }
+  return deleted;
 }

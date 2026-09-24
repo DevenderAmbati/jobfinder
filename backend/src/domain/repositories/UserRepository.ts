@@ -6,7 +6,12 @@ import type {
 
 export interface CreateUserInput {
   email: string;
-  passwordHash: string;
+  /** Firebase Auth uid when already provisioned by the client SDK. */
+  uid?: string | null;
+  /** Plain password — used only when Admin SDK creates the Auth user. */
+  password?: string | null;
+  /** @deprecated Unused with Firebase Auth; kept for interface compatibility. */
+  passwordHash?: string;
   name?: string | null;
 }
 
@@ -14,6 +19,12 @@ export interface UserRepository {
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<AuthUser | null>;
   create(input: CreateUserInput): Promise<AuthUser>;
+  /** Upsert Firestore profile for an existing Firebase Auth user. */
+  ensureProfile?(input: {
+    uid: string;
+    email: string;
+    name?: string | null;
+  }): Promise<AuthUser>;
   /** Users that have a resume on file — used when scoring shared jobs for everyone. */
   listIdsWithResume(): Promise<string[]>;
   getTelegramLink(userId: string): Promise<UserTelegramLink | null>;

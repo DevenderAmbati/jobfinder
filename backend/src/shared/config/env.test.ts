@@ -6,7 +6,7 @@ function baseEnv(
   overrides: Record<string, string | undefined> = {},
 ): NodeJS.ProcessEnv {
   return {
-    DATABASE_URL: 'postgresql://jobfinder:jobfinder@127.0.0.1:5432/jobfinder',
+    FIREBASE_PROJECT_ID: 'demo-jobfinder',
     PORT: '3001',
     NODE_ENV: 'development',
     ...overrides,
@@ -14,8 +14,17 @@ function baseEnv(
 }
 
 describe('loadConfig', () => {
-  it('requires DATABASE_URL', () => {
-    expect(() => loadConfig(baseEnv({ DATABASE_URL: '' }))).toThrow(AppError);
+  it('requires FIREBASE_PROJECT_ID in production', () => {
+    expect(() =>
+      loadConfig(
+        baseEnv({
+          NODE_ENV: 'production',
+          FIREBASE_PROJECT_ID: '',
+          GCLOUD_PROJECT: '',
+          GOOGLE_CLOUD_PROJECT: '',
+        }),
+      ),
+    ).toThrow(AppError);
   });
 
   it('accepts CRON_FREQUENCY as alias for CRON_DEFAULT_EXPRESSION', () => {
@@ -37,12 +46,7 @@ describe('loadConfig', () => {
 
   it('parses LOG_LEVEL and defaults by NODE_ENV', () => {
     expect(
-      loadConfig(
-        baseEnv({
-          NODE_ENV: 'production',
-          JWT_SECRET: 'production-jwt-secret-at-least-24',
-        }),
-      ).logLevel,
+      loadConfig(baseEnv({ NODE_ENV: 'production' })).logLevel,
     ).toBe('info');
     expect(loadConfig(baseEnv({ NODE_ENV: 'development' })).logLevel).toBe(
       'debug',
@@ -50,10 +54,10 @@ describe('loadConfig', () => {
     expect(loadConfig(baseEnv({ LOG_LEVEL: 'warn' })).logLevel).toBe('warn');
   });
 
-  it('requires JWT_SECRET in production', () => {
-    expect(() => loadConfig(baseEnv({ NODE_ENV: 'production' }))).toThrow(
-      AppError,
-    );
+  it('disables in-process cron by default in production', () => {
+    expect(
+      loadConfig(baseEnv({ NODE_ENV: 'production' })).enableInProcessCron,
+    ).toBe(false);
   });
 
   it('rejects invalid LOG_LEVEL and PORT', () => {

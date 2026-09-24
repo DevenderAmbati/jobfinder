@@ -7,7 +7,7 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     port: 3001,
     nodeEnv: 'development',
-    databaseUrl: 'postgresql://jobfinder:jobfinder@127.0.0.1:5432/jobfinder',
+    firebaseProjectId: 'demo-jobfinder',
     logLevel: 'info',
     logToFiles: false,
     logDir: 'logs',
@@ -20,7 +20,11 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     maxNotificationsPerRun: 15,
     telegramBotToken: '',
     telegramChatId: '',
+    telegramWebhookMode: false,
+    telegramWebhookSecret: '',
     cronDefaultExpression: '0 */6 * * *',
+    enableInProcessCron: true,
+    internalSchedulerSecret: '',
     playwrightHeadless: true,
     playwrightMaxConcurrent: 2,
     corsOrigin: '',
@@ -28,7 +32,7 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     rateLimitMax: 300,
     rateLimitFetchMax: 30,
     requestLogging: true,
-    jwtSecret: 'test-jwt-secret',
+    storageBucket: '',
     ...overrides,
   };
 }

@@ -30,7 +30,8 @@ export interface ApiRouterOptions {
 
 /**
  * HTTP route map. Controllers only coordinate — use cases own orchestration.
- * Public: health, version, register, login. Everything else requires JWT.
+ * Public: health, version, register, login, telegram webhook, internal scheduler.
+ * Everything else requires Firebase ID token.
  */
 export function createApiRouter(
   container: AppContainer,
@@ -65,6 +66,59 @@ export function createApiRouter(
   );
   apiRouter.post('/auth/login', (req, res, next) =>
     void auth.login(req, res, next),
+  );
+
+  // Telegram webhook (no user JWT). Optional secret via header.
+  apiRouter.post('/telegram/webhook', (req, res, next) =>
+    void telegram.webhook(req, res, next),
+  );
+
+  // Cloud Scheduler tick (OIDC audience or shared secret — no user JWT).
+  // Body: { force?: boolean, wait?: boolean } — force enqueues all enabled;
+  // wait keeps the request open until the in-memory queue drains (Cloud Run CPU).
+  apiRouter.post('/internal/schedule-tick', (req, res, next) =>
+    void (async () => {
+      try {
+        const secret = container.config.internalSchedulerSecret;
+        const header =
+          typeof req.headers['x-scheduler-secret'] === 'string'
+            ? req.headers['x-scheduler-secret']
+            : '';
+        const authHeader = req.headers.authorization ?? '';
+        const okSecret = Boolean(secret) && header === secret;
+        // Cloud Scheduler OIDC: Authorization Bearer present is enough when no secret configured.
+        const okOidc =
+          !secret &&
+          authHeader.startsWith('Bearer ') &&
+          authHeader.length > 20;
+        if (!okSecret && !okOidc) {
+          res.status(401).json({
+            error: { message: 'Unauthorized scheduler request' },
+          });
+          return;
+        }
+        const body =
+          req.body && typeof req.body === 'object'
+            ? (req.body as { force?: unknown; wait?: unknown })
+            : {};
+        const force = body.force === true;
+        // Default wait=true when force so a manual full run finishes under one request.
+        const wait = body.wait === true || (force && body.wait !== false);
+        const result = await container.scheduleTick.execute(new Date(), {
+          force,
+          wait,
+        });
+        res.status(200).json({
+          data: {
+            ...result,
+            enqueuedCount: result.enqueued.length,
+            waited: wait,
+          },
+        });
+      } catch (error) {
+        next(error);
+      }
+    })(),
   );
 
   apiRouter.use(requireAuth);

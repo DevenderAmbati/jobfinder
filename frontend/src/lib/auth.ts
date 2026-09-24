@@ -1,18 +1,14 @@
-const TOKEN_KEY = 'jobfinder_auth_token';
-const USER_KEY = 'jobfinder_auth_user';
-
 export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
 }
 
+const USER_KEY = 'jobfinder_auth_user';
+
+/** @deprecated Token comes from Firebase Auth; kept for clearSession compatibility. */
 export function getStoredToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export function getStoredUser(): AuthUser | null {
@@ -31,12 +27,16 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
-export function persistSession(token: string, user: AuthUser): void {
-  localStorage.setItem(TOKEN_KEY, token);
+export function persistUser(user: AuthUser): void {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
+/** @deprecated Use persistUser — Firebase holds the ID token. */
+export function persistSession(_token: string, user: AuthUser): void {
+  persistUser(user);
+}
+
 export function clearSession(): void {
-  localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem('jobfinder_auth_token');
 }

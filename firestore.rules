@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Shared catalog — authenticated read; writes only via Admin SDK (Cloud Run).
+    match /companies/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /jobs/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /jobDedup/{hash} {
+      allow read, write: if false;
+    }
+
+    match /providerHealth/{provider} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /providerLogs/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /notificationLogs/{id} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /promptTemplates/{id} {
+      allow read, write: if false;
+    }
+
+    match /meta/{doc} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Per-user data
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /rule/{doc} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /resume/{doc} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /matches/{jobId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /applications/{id} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /analytics/{doc} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+    }
+  }
+}
