@@ -42,7 +42,45 @@ const container = createContainer(config);
 const app = express();
 
 applySecurityMiddleware(app, config);
-app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+  if (req.path !== '/api/internal/schedule-tick') {
+    express.json({ limit: '1mb' })(req, res, next);
+    return;
+  }
+  // Cloud Scheduler sometimes posts a body our JSON parser rejects with 400,
+  // which skips the whole tick. A missing or unreadable body still means "run".
+  express.text({ type: () => true, limit: '1mb' })(req, res, (err) => {
+    if (err) {
+      logger.warn('Scheduler tick body unreadable', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+      req.body = {};
+      next();
+      return;
+    }
+    const raw = typeof req.body === 'string' ? req.body.trim() : '';
+    if (!raw) {
+      req.body = {};
+      next();
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      req.body =
+        parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? parsed
+          : {};
+    } catch (parseError) {
+      logger.warn('Scheduler tick body was not JSON', {
+        message:
+          parseError instanceof Error ? parseError.message : String(parseError),
+        bytes: raw.length,
+      });
+      req.body = {};
+    }
+    next();
+  });
+});
 app.use('/api', createApiRateLimiter(config));
 app.use(
   '/api',

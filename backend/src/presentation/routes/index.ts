@@ -74,8 +74,9 @@ export function createApiRouter(
   );
 
   // Cloud Scheduler tick (OIDC audience or shared secret — no user JWT).
-  // Body: { force?: boolean, wait?: boolean } — force enqueues all enabled;
-  // wait keeps the request open until the in-memory queue drains (Cloud Run CPU).
+  // Body: { force?: boolean, wait?: boolean } — force enqueues all enabled.
+  // wait defaults to true so Cloud Run keeps CPU until the in-memory queue
+  // drains. Returning early lets the instance scale to zero and drop fetches.
   apiRouter.post('/internal/schedule-tick', (req, res, next) =>
     void (async () => {
       try {
@@ -102,8 +103,7 @@ export function createApiRouter(
             ? (req.body as { force?: unknown; wait?: unknown })
             : {};
         const force = body.force === true;
-        // Default wait=true when force so a manual full run finishes under one request.
-        const wait = body.wait === true || (force && body.wait !== false);
+        const wait = body.wait !== false;
         const result = await container.scheduleTick.execute(new Date(), {
           force,
           wait,

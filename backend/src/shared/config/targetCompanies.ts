@@ -652,14 +652,6 @@ export const TARGET_COMPANIES: TargetCompany[] = [
     enabled: true,
     frequency: DEFAULT_COMPANY_FREQUENCY,
   },
-  {
-    name: 'Accenture',
-    tier: 3,
-    provider: 'workday',
-    careerUrl: 'https://accenture.wd103.myworkdayjobs.com/AccentureCareers',
-    enabled: true,
-    frequency: DEFAULT_COMPANY_FREQUENCY,
-  },
 
   // ── Global (verified public boards on existing providers) ───────────────
   // Greenhouse
