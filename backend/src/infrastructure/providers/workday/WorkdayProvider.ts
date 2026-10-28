@@ -99,7 +99,9 @@ export class WorkdayProvider implements JobProvider {
       (probe.total ?? 0) >= INDIA_BOARD_NARROW_MIN
         ? indiaCountryFacetId(probe.facets)
         : null;
-    const appliedFacets = indiaId ? { Country: [indiaId] } : {};
+    const appliedFacets: Record<string, string[]> = indiaId
+      ? { Country: [indiaId] }
+      : {};
     if (indiaId) {
       logger.provider.info('Narrowing Workday board to India', {
         company: company.name,
