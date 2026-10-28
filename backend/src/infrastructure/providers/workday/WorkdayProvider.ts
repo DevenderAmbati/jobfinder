@@ -13,10 +13,25 @@ export interface WorkdayJobPosting {
   bulletFields?: string[];
 }
 
+export interface WorkdayFacetValue {
+  descriptor?: string;
+  id?: string;
+}
+
+export interface WorkdayFacet {
+  facetParameter?: string;
+  descriptor?: string;
+  values?: WorkdayFacetValue[];
+}
+
 export interface WorkdayJobsResponse {
   total?: number;
   jobPostings?: WorkdayJobPosting[];
+  facets?: WorkdayFacet[];
 }
+
+/** Boards larger than this are refetched with the India country facet when Workday publishes one. */
+const INDIA_BOARD_NARROW_MIN = 200;
 
 export interface WorkdayJobDetailResponse {
   jobPostingInfo?: {
@@ -79,12 +94,28 @@ export class WorkdayProvider implements JobProvider {
       site: target.site,
     });
 
+    const probe = await this.fetchJobsPage(jobsUrl, target, 0, {});
+    const indiaId =
+      (probe.total ?? 0) >= INDIA_BOARD_NARROW_MIN
+        ? indiaCountryFacetId(probe.facets)
+        : null;
+    const appliedFacets = indiaId ? { Country: [indiaId] } : {};
+    if (indiaId) {
+      logger.provider.info('Narrowing Workday board to India', {
+        company: company.name,
+        unfilteredTotal: probe.total ?? null,
+      });
+    }
+
     const postings: WorkdayJobPosting[] = [];
     let total = Number.POSITIVE_INFINITY;
     let offset = 0;
 
     for (let page = 0; page < this.maxPages; page += 1) {
-      const payload = await this.fetchJobsPage(jobsUrl, target, offset);
+      const payload =
+        page === 0 && !indiaId
+          ? probe
+          : await this.fetchJobsPage(jobsUrl, target, offset, appliedFacets);
       const batch = payload.jobPostings ?? [];
 
       if (page === 0 && typeof payload.total === 'number' && payload.total > 0) {
@@ -186,6 +217,7 @@ export class WorkdayProvider implements JobProvider {
     jobsUrl: string,
     target: WorkdayBoardTarget,
     offset: number,
+    appliedFacets: Record<string, string[]>,
   ): Promise<WorkdayJobsResponse> {
     const response = await this.fetchImpl(jobsUrl, {
       method: 'POST',
@@ -197,23 +229,31 @@ export class WorkdayProvider implements JobProvider {
         Referer: `https://${target.host}/en-US/${target.site}`,
       },
       body: JSON.stringify({
-        appliedFacets: {},
+        appliedFacets,
         limit: this.pageSize,
         offset,
         searchText: '',
       }),
     });
 
+    const body = await response.text();
     if (!response.ok) {
-      const body = await response.text();
       throw new AppError(
         'PROVIDER_FETCH_FAILED',
         `Workday HTTP ${response.status} for ${target.site}: ${body.slice(0, 200)}`,
         502,
       );
     }
+    const trimmed = body.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      throw new AppError(
+        'PROVIDER_FETCH_FAILED',
+        `Workday returned a page instead of job data for ${target.site}`,
+        502,
+      );
+    }
 
-    return (await response.json()) as WorkdayJobsResponse;
+    return JSON.parse(trimmed) as WorkdayJobsResponse;
   }
 
   private async fetchJobDetail(
@@ -315,6 +355,20 @@ export function parseWorkdayCareerUrl(careerUrl: string): WorkdayBoardTarget {
   }
 
   return { host, tenant, site };
+}
+
+export function indiaCountryFacetId(
+  facets: WorkdayFacet[] | undefined,
+): string | null {
+  const country = facets?.find(
+    (facet) =>
+      facet.facetParameter === 'Country' || facet.descriptor === 'Country',
+  );
+  const india = country?.values?.find((value) =>
+    /^india$/i.test(value.descriptor?.trim() ?? ''),
+  );
+  const id = india?.id?.trim();
+  return id ? id : null;
 }
 
 export function parseWorkdayPostedOn(raw: string): Date | null {

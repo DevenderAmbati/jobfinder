@@ -1,7 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { AppContainer } from '../../infrastructure/di/container.js';
 import type { JobListOptions } from '../../domain/repositories/JobRepository.js';
+import { latestFetchWindow } from '../../domain/services/latestFetchWindow.js';
 import { requireUserId } from '../middleware/authMiddleware.js';
+
+const FETCH_WINDOW_SLACK_MS = 5_000;
 
 const POSTED_WITHIN = new Set(['today', 'yesterday', 'week', 'month']);
 
@@ -86,7 +89,7 @@ export function createJobController(container: AppContainer) {
           provider: queryString(req.query.provider),
           search: queryString(req.query.search),
           roles,
-          location: queryString(req.query.location),
+          locations: queryStringList(req.query.location),
           skills: queryString(req.query.skills),
           postedWithin,
           scoreMin: Number.isFinite(scoreMin) ? scoreMin : undefined,
@@ -94,6 +97,43 @@ export function createJobController(container: AppContainer) {
           limit: Number.isFinite(limit) ? limit : undefined,
         });
         res.status(200).json({ data: jobs });
+      } catch (error) {
+        next(error);
+      }
+    },
+
+    async latestFetch(
+      req: Request,
+      res: Response,
+      next: NextFunction,
+    ): Promise<void> {
+      try {
+        const userId = requireUserId(req);
+        const logs = await container.logs.listProviderLogs(500);
+        const window = latestFetchWindow(logs);
+        if (!window) {
+          res.status(200).json({
+            data: { startedAt: null, fetchedAt: null, jobs: [] },
+          });
+          return;
+        }
+
+        const jobs = await container.jobs.findMany({
+          userId,
+          createdFrom: new Date(
+            window.startedAt.getTime() - FETCH_WINDOW_SLACK_MS,
+          ),
+          createdTo: new Date(window.fetchedAt.getTime() + FETCH_WINDOW_SLACK_MS),
+          sort: 'created',
+          limit: 2_500,
+        });
+        res.status(200).json({
+          data: {
+            startedAt: window.startedAt.toISOString(),
+            fetchedAt: window.fetchedAt.toISOString(),
+            jobs,
+          },
+        });
       } catch (error) {
         next(error);
       }

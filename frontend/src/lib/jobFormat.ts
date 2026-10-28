@@ -300,16 +300,36 @@ const INDIA_LOCATION_TOKENS = [
   'uttar pradesh',
 ];
 
+/** "Austin, IN" is Indiana. "Indiana" also contains the letters "india". */
+const ABROAD_LOCATION =
+  /\b(united states|united kingdom|u\.s\.a\.|u\.s\.|usa|canada|australia|germany|ireland|singapore|london|seattle|san francisco|mountain view|new york|california|texas|washington|indiana|indianapolis|austin|chicago|boston|dublin|berlin|tokyo|sydney|toronto)\b/i;
+
+function containsToken(haystack: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(haystack);
+}
+
 export function isIndiaLocation(location: string | null | undefined): boolean {
   const normalized = location?.toLowerCase().trim() ?? '';
   if (!normalized) {
     return false;
   }
-  if (INDIA_LOCATION_TOKENS.some((token) => normalized.includes(token))) {
+  if (INDIA_LOCATION_TOKENS.some((token) => containsToken(normalized, token))) {
     return true;
+  }
+  if (ABROAD_LOCATION.test(normalized)) {
+    return false;
   }
   // Amazon-style country code fragments: "IN", "IN, KA, Bengaluru", "KA, IN"
   return /(^|,\s*)in(\s*,|$)/i.test(normalized);
+}
+
+/** Jobs page: India listings, and listings that never recorded a location. */
+export function isVisibleInJobList(location: string | null | undefined): boolean {
+  if (!location?.trim()) {
+    return true;
+  }
+  return isIndiaLocation(location);
 }
 
 /**

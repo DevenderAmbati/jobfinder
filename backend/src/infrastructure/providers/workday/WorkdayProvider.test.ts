@@ -116,6 +116,78 @@ describe('WorkdayProvider', () => {
     expect(jobs[0]?.applyUrl).toContain('NVIDIAExternalCareerSite');
   });
 
+  it('refetches large boards with the India country facet', async () => {
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        offset: number;
+        appliedFacets: { Country?: string[] };
+      };
+      if (!body.appliedFacets.Country) {
+        return new Response(
+          JSON.stringify({
+            total: 400,
+            jobPostings: [
+              {
+                title: 'Ignored global role',
+                externalPath: '/job/Austin/Role_R0',
+                locationsText: 'Austin, TX',
+              },
+            ],
+            facets: [
+              {
+                facetParameter: 'Country',
+                values: [{ descriptor: 'India', id: 'india-1', count: 3 }],
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          total: 1,
+          jobPostings: [
+            {
+              title: 'Pune Engineer',
+              externalPath: '/job/Pune/Engineer_R1',
+              locationsText: 'Pune, India',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+
+    const provider = new WorkdayProvider({
+      fetchImpl: fetchImpl as typeof fetch,
+      includeDetails: false,
+    });
+    const jobs = await provider.fetchJobs(company);
+
+    expect(jobs.map((job) => job.title)).toEqual(['Pune Engineer']);
+    const secondBody = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body)) as {
+      appliedFacets: { Country: string[] };
+    };
+    expect(secondBody.appliedFacets.Country).toEqual(['india-1']);
+  });
+
+  it('rejects an HTML job list instead of parsing it', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response('<!DOCTYPE html><html></html>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        }),
+    );
+    const provider = new WorkdayProvider({
+      fetchImpl: fetchImpl as typeof fetch,
+      includeDetails: false,
+    });
+    await expect(provider.fetchJobs(company)).rejects.toThrow(
+      /page instead of job data/,
+    );
+  });
+
   it('throws on list HTTP errors', async () => {
     const fetchImpl = vi.fn(
       async () => new Response('blocked', { status: 403 }),

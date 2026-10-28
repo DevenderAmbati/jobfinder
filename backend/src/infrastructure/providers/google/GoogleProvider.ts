@@ -3,7 +3,8 @@ import type { Job } from '../../../domain/entities/Job.js';
 import type { JobProvider } from '../../../domain/ports/JobProvider.js';
 import { AppError } from '../../../shared/errors/AppError.js';
 import { logger } from '../../../shared/utils/logger.js';
-import { stripHtml } from '../../../shared/utils/html.js';
+import { isIndiaLocation } from '../../../domain/services/indiaLocation.js';
+import { decodeBasicEntities, stripHtml } from '../../../shared/utils/html.js';
 
 export interface GoogleJobItem {
   jobId: string;
@@ -217,4 +218,126 @@ function parseDate(raw: string | null): Date | null {
   }
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const MORE_PLACES = /^\+\d+\s+more$/i;
+
+export function cleanGoogleTitle(raw: string | null | undefined): string {
+  return decodeBasicEntities(stripHtml(raw ?? ''))
+    .replace(/^learn more about\s+/i, '')
+    .trim();
+}
+
+/** Keep India offices when the card lists several. Fall back to "India" only when the search itself is India-scoped and the card has no place text. */
+export function resolveListedLocation(
+  places: string[],
+  indiaScoped: boolean,
+): string | null {
+  const cleaned = [
+    ...new Set(
+      places
+        .map((place) => decodeBasicEntities(place).replace(/\s+/g, ' ').trim())
+        .filter((place) => place.length > 0 && !MORE_PLACES.test(place)),
+    ),
+  ];
+  const india = cleaned.filter((place) => isIndiaLocation(place));
+  if (india.length > 0) {
+    return india.join('; ').slice(0, 240);
+  }
+  if (cleaned.length > 0) {
+    return cleaned.join('; ').slice(0, 240);
+  }
+  return indiaScoped ? 'India' : null;
+}
+
+export function isIndiaScopedGoogleSearch(searchUrl: string): boolean {
+  return /[?&]location=India(?:&|$)/i.test(searchUrl);
+}
+
+export function parseGoogleCareersHtml(
+  html: string,
+  searchUrl: string,
+): GoogleJobItem[] {
+  const indiaScoped = isIndiaScopedGoogleSearch(searchUrl);
+  const jobs: GoogleJobItem[] = [];
+  const seen = new Set<string>();
+  for (const part of html.split('<li class="lLd3Je"').slice(1)) {
+    const slice = part.slice(0, 20_000);
+    const heading = slice.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)?.[1] ?? '';
+    const aria = slice.match(/aria-label="(Learn more about [^"]+)"/i)?.[1] ?? '';
+    const title = (cleanGoogleTitle(heading) || cleanGoogleTitle(aria)).slice(0, 160);
+    const href = decodeBasicEntities(
+      slice.match(/href="([^"]*jobs\/results\/[^"]+)"/i)?.[1] ?? '',
+    );
+    const jobId = href.match(/jobs\/results\/(\d{6,})/i)?.[1];
+    if (!jobId || !title || seen.has(jobId)) {
+      continue;
+    }
+    seen.add(jobId);
+    const places = [...slice.matchAll(/class="r0wTof[^"]*">([^<]+)/gi)].map(
+      (match) => match[1] ?? '',
+    );
+    jobs.push({
+      jobId,
+      title,
+      location: resolveListedLocation(places, indiaScoped),
+      description: null,
+      applyUrl: toAbsoluteGoogleUrl(
+        href,
+        jobId,
+        'https://www.google.com/about/careers/applications',
+      ),
+      postedDate: null,
+    });
+  }
+  return jobs;
+}
+
+export async function fetchGoogleCareersListings(
+  searchUrl: string,
+  options: { maxPages?: number; fetchImpl?: typeof fetch } = {},
+): Promise<GoogleJobItem[]> {
+  const maxPages = options.maxPages ?? 6;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const collected = new Map<string, GoogleJobItem>();
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const response = await fetchImpl(googleResultsPageUrl(searchUrl, page), {
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        accept: 'text/html',
+      },
+    });
+    if (!response.ok) {
+      break;
+    }
+    const cards = parseGoogleCareersHtml(await response.text(), searchUrl);
+    if (cards.length === 0) {
+      break;
+    }
+    let added = 0;
+    for (const card of cards) {
+      if (collected.has(card.jobId)) {
+        continue;
+      }
+      collected.set(card.jobId, card);
+      added += 1;
+    }
+    if (added === 0) {
+      break;
+    }
+  }
+
+  return [...collected.values()];
+}
+
+function googleResultsPageUrl(searchUrl: string, page: number): string {
+  const url = new URL(searchUrl);
+  if (page <= 1) {
+    url.searchParams.delete('page');
+  } else {
+    url.searchParams.set('page', String(page));
+  }
+  return url.toString();
 }

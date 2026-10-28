@@ -3,6 +3,8 @@ import { withChromiumBrowser } from '../../playwright/browserSession.js';
 import { logger } from '../../../shared/utils/logger.js';
 import {
   extractGoogleJobsFromPayload,
+  fetchGoogleCareersListings,
+  parseGoogleCareersHtml,
   type GoogleJobItem,
   type GoogleListingFetcher,
 } from './GoogleProvider.js';
@@ -25,6 +27,22 @@ export function createPlaywrightGoogleListingFetcher(
   const headless = options.headless ?? true;
 
   return async (_company: Company, searchUrl: string): Promise<GoogleJobItem[]> => {
+    try {
+      const fromHttp = await fetchGoogleCareersListings(searchUrl, { maxPages: 6 });
+      if (fromHttp.length > 0) {
+        const jobs = fromHttp.slice(0, maxJobs);
+        logger.provider.info('Google careers HTML fetch complete', {
+          count: jobs.length,
+          searchUrl,
+        });
+        return jobs;
+      }
+    } catch (error) {
+      logger.provider.warn('Google careers HTML fetch failed', {
+        message: error instanceof Error ? error.message : 'unknown',
+      });
+    }
+
     return withChromiumBrowser(async (browser) => {
       const collected = new Map<string, GoogleJobItem>();
       const page = await browser.newPage();
@@ -45,7 +63,9 @@ export function createPlaywrightGoogleListingFetcher(
             }
             const payload: unknown = await response.json();
             for (const job of extractGoogleJobsFromPayload(payload)) {
-              collected.set(`${job.jobId}|${job.title}`, job);
+              if (!collected.has(job.jobId)) {
+                collected.set(job.jobId, job);
+              }
             }
           } catch {
             // ignore non-JSON or aborted responses
@@ -58,6 +78,13 @@ export function createPlaywrightGoogleListingFetcher(
         timeout: timeoutMs,
       });
       await new Promise((resolve) => setTimeout(resolve, 3_000));
+
+      for (const card of parseGoogleCareersHtml(await page.content(), searchUrl)) {
+        const existing = collected.get(card.jobId);
+        if (!existing || (!existing.location && card.location)) {
+          collected.set(card.jobId, card);
+        }
+      }
 
       // Scroll to encourage lazy-loaded result cards.
       for (let i = 0; i < 4; i += 1) {
@@ -88,7 +115,7 @@ export function createPlaywrightGoogleListingFetcher(
           ),
         ];
         return ids.map((jobId) => {
-          const link = doc.querySelector(`a[href*="/jobs/results/${jobId}"]`);
+          const link = doc.querySelector(`a[href*="jobs/results/${jobId}"]`);
           const card =
             link?.closest?.('li, article, div[role="listitem"], li, div') ??
             link;
@@ -111,19 +138,22 @@ export function createPlaywrightGoogleListingFetcher(
       });
 
       for (const raw of fromHtml) {
+        if (collected.has(raw.jobId)) {
+          continue;
+        }
         const item: GoogleJobItem = {
           jobId: raw.jobId,
-          title: raw.title,
-          location: raw.location,
+          title: raw.title.replace(/^learn more about\s+/i, '').trim() || raw.title,
+          location: raw.location ?? (/[?&]location=India(?:&|$)/i.test(searchUrl) ? 'India' : null),
           description: raw.description,
           applyUrl: raw.applyUrl,
           postedDate: null,
         };
-        collected.set(`${item.jobId}|${item.title}`, item);
+        collected.set(item.jobId, item);
       }
 
       const domJobs = await page.$$eval(
-        'a[href*="/jobs/results/"]',
+        'a[href*="jobs/results/"]',
         (anchors) =>
           anchors.slice(0, 150).map((anchor, index) => {
             const card =
@@ -148,15 +178,18 @@ export function createPlaywrightGoogleListingFetcher(
       );
 
       for (const raw of domJobs) {
+        if (collected.has(raw.jobId)) {
+          continue;
+        }
         const item: GoogleJobItem = {
           jobId: raw.jobId,
-          title: raw.title,
-          location: raw.location,
+          title: raw.title.replace(/^learn more about\s+/i, '').trim() || raw.title,
+          location: raw.location ?? (/[?&]location=India(?:&|$)/i.test(searchUrl) ? 'India' : null),
           description: raw.description,
           applyUrl: raw.applyUrl,
           postedDate: null,
         };
-        collected.set(`${item.jobId}|${item.title}`, item);
+        collected.set(item.jobId, item);
       }
 
       const jobs = [...collected.values()].slice(0, maxJobs);

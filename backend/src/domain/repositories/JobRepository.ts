@@ -28,7 +28,10 @@ export interface JobListOptions {
   /** Single role substring (legacy). Prefer roles. */
   role?: string;
   roles?: string[];
+  /** Single location substring (legacy). Prefer locations. */
   location?: string;
+  /** Match if the job location contains any of these substrings. */
+  locations?: string[];
   skills?: string;
   postedWithin?: 'today' | 'yesterday' | 'week' | 'month';
   scored?: boolean;
@@ -37,7 +40,13 @@ export interface JobListOptions {
    * the DB layer (scored jobs only), so the row cap keeps the top matches
    * instead of only the most recent postings. Defaults to newest first.
    */
-  sort?: 'latest' | 'match-desc' | 'match-asc';
+  sort?: 'latest' | 'match-desc' | 'match-asc' | 'created';
+  /** Inclusive lower bound on when the job was saved. */
+  createdFrom?: Date;
+  /** Inclusive upper bound on when the job was saved. */
+  createdTo?: Date;
+  /** Keep jobs whose match score is strictly above this value. */
+  scoreAbove?: number;
   limit?: number;
   /** Skip the first N rows (for batched rescore / pagination). */
   offset?: number;

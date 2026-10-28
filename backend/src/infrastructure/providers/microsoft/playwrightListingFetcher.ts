@@ -1,8 +1,10 @@
 import type { Company } from '../../../domain/entities/Company.js';
 import { withChromiumBrowser } from '../../playwright/browserSession.js';
 import { logger } from '../../../shared/utils/logger.js';
+import { locationFromListingText } from '../../../domain/services/listingLocation.js';
 import {
   extractMicrosoftJobsFromPayload,
+  fetchMicrosoftCareersListings,
   type MicrosoftJobItem,
   type MicrosoftListingFetcher,
 } from './MicrosoftProvider.js';
@@ -25,6 +27,23 @@ export function createPlaywrightMicrosoftListingFetcher(
   const headless = options.headless ?? true;
 
   return async (_company: Company, searchUrl: string): Promise<MicrosoftJobItem[]> => {
+    try {
+      const fromHttp = await fetchMicrosoftCareersListings(searchUrl, {
+        maxJobs,
+      });
+      if (fromHttp.length > 0) {
+        logger.provider.info('Microsoft careers API fetch complete', {
+          count: fromHttp.length,
+          searchUrl,
+        });
+        return fromHttp;
+      }
+    } catch (error) {
+      logger.provider.warn('Microsoft careers API fetch failed', {
+        message: error instanceof Error ? error.message : 'unknown',
+      });
+    }
+
     return withChromiumBrowser(async (browser) => {
       const collected = new Map<string, MicrosoftJobItem>();
       const page = await browser.newPage();
@@ -91,7 +110,7 @@ export function createPlaywrightMicrosoftListingFetcher(
         const item: MicrosoftJobItem = {
           jobId: raw.jobId,
           title: raw.title,
-          location: raw.location,
+          location: locationFromListingText(raw.description),
           description: raw.description,
           applyUrl: raw.applyUrl,
           postedDate: null,

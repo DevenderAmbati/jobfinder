@@ -78,4 +78,48 @@ describe('extractJobLinksFromHtml', () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.title).toBe('Frontend Engineer');
   });
+
+  it('keeps numbered career slugs such as D. E. Shaw postings', () => {
+    const html = `
+      <a href="/careers/lead-tech-hc-dev-6537">Lead Tech</a>
+      <a href="/careers/benefits">Benefits</a>
+    `;
+    const jobs = extractJobLinksFromHtml(html, 'https://www.deshawindia.com');
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.applyUrl).toContain('/careers/lead-tech-hc-dev-6537');
+  });
+
+  it('keeps an Indian city written next to the job link', () => {
+    const html = `
+      <a href="/jobs/opening-9">Backend Engineer Hyderabad</a>
+    `;
+    const jobs = extractJobLinksFromHtml(
+      html,
+      'https://careers.unitedhealthgroup.com/search-jobs/India',
+    );
+    expect(jobs[0]?.location).toBe('Hyderabad, India');
+  });
+});
+
+describe('parseExaleadCareerHits', () => {
+  it('keeps India Dassault hits and skips other countries', async () => {
+    const { parseExaleadCareerHits } = await import('./custom/CustomProvider.js');
+    const xml = `
+      <Hit>
+        <Meta name="content_title"><MetaString name="value">Java Developer</MetaString></Meta>
+        <Meta name="content_cta_1_url"><MetaString name="value">https://www.3ds.com/careers/jobs/java-developer-1</MetaString></Meta>
+        <Meta name="content_categories"><MetaString name="value">Country/India City/India, MH, Pune</MetaString></Meta>
+        <Meta name="content_start_datetime"><MetaString name="value">2026/10/02 04:22:19</MetaString></Meta>
+      </Hit>
+      <Hit>
+        <Meta name="content_title"><MetaString name="value">US Role</MetaString></Meta>
+        <Meta name="content_cta_1_url"><MetaString name="value">https://www.3ds.com/careers/jobs/us-role-2</MetaString></Meta>
+        <Meta name="content_categories"><MetaString name="value">Country/United States</MetaString></Meta>
+      </Hit>
+    `;
+    const jobs = parseExaleadCareerHits(xml);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.title).toBe('Java Developer');
+    expect(jobs[0]?.location).toBe('India, MH, Pune');
+  });
 });

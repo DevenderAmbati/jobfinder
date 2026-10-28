@@ -2,11 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { Button } from '../components/Button';
+import { formatFetchWindow, JobResultsTable } from '../components/JobResultsTable';
 import { LoadingState } from '../components/LoadingState';
-import { Pagination } from '../components/Pagination';
 import { Select } from '../components/Select';
 import { MultiSelect } from '../components/MultiSelect';
-import { TableScroll } from '../components/TableScroll';
 import { usePagination } from '../hooks/usePagination';
 import {
   api,
@@ -15,17 +14,11 @@ import {
   type Company,
   type JobFacets,
   type JobListItem,
+  type LatestFetch,
   type ResumeData,
   type RuleConfig,
 } from '../lib/api';
-import {
-  formatCtc,
-  formatExperience,
-  formatPostedRelative,
-  extractMatchedSkills,
-  extractExternalJobId,
-  isIndiaLocation,
-} from '../lib/jobFormat';
+import { isVisibleInJobList } from '../lib/jobFormat';
 
 const PROVIDERS = [
   'stub',
@@ -58,27 +51,55 @@ const POSTED_OPTIONS = [
 ] as const;
 
 const SORT_OPTIONS = [
-  { value: 'latest', label: 'Latest first' },
   { value: 'match-desc', label: 'Highest match' },
-  { value: 'match-asc', label: 'Lowest match' },
+  { value: 'latest', label: 'Latest first' },
 ] as const;
 
 type JobSort = (typeof SORT_OPTIONS)[number]['value'];
+
+const LOCATION_OPTIONS = [
+  { value: 'bengaluru', label: 'Bengaluru', aliases: ['bengaluru', 'bangalore'] },
+  { value: 'hyderabad', label: 'Hyderabad', aliases: ['hyderabad'] },
+  { value: 'pune', label: 'Pune', aliases: ['pune'] },
+  { value: 'mumbai', label: 'Mumbai', aliases: ['mumbai'] },
+  { value: 'chennai', label: 'Chennai', aliases: ['chennai'] },
+  { value: 'delhi', label: 'Delhi', aliases: ['delhi'] },
+  { value: 'noida', label: 'Noida', aliases: ['noida'] },
+  { value: 'gurugram', label: 'Gurugram', aliases: ['gurugram', 'gurgaon'] },
+  { value: 'kolkata', label: 'Kolkata', aliases: ['kolkata'] },
+  { value: 'remote', label: 'Remote', aliases: ['remote'] },
+] as const;
 
 const emptyFilters = {
   search: '',
   companyIds: [] as string[],
   roles: [] as string[],
+  locations: [] as string[],
   postedWithin: '',
   provider: '',
 };
+
+function isJobApplied(
+  jobId: string | undefined,
+  applicationByJobId: Map<string, ApplicationItem>,
+): boolean {
+  if (!jobId) {
+    return false;
+  }
+  const tracked = applicationByJobId.get(jobId);
+  return (
+    tracked != null && tracked.status !== 'SAVED' && tracked.status !== 'REJECTED'
+  );
+}
 
 export function JobsPage() {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState(emptyFilters);
   const [showFilters, setShowFilters] = useState(false);
   const [onlyAboveThreshold, setOnlyAboveThreshold] = useState(false);
-  const [sortBy, setSortBy] = useState<JobSort>('latest');
+  const [hideApplied, setHideApplied] = useState(false);
+  const [latestAbove50, setLatestAbove50] = useState(false);
+  const [sortBy, setSortBy] = useState<JobSort>('match-desc');
   const [actionJobId, setActionJobId] = useState<string | null>(null);
 
   const rulesQuery = useQuery({
@@ -127,6 +148,12 @@ export function JobsPage() {
     for (const role of filters.roles) {
       params.append('role', role);
     }
+    for (const location of filters.locations) {
+      const option = LOCATION_OPTIONS.find((item) => item.value === location);
+      for (const alias of option?.aliases ?? [location]) {
+        params.append('location', alias);
+      }
+    }
     if (filters.postedWithin) params.set('postedWithin', filters.postedWithin);
     // Always show the shared catalog. Scores fill in as JobMatch rows are written.
     // "Above threshold" still needs scored rows only.
@@ -136,7 +163,7 @@ export function JobsPage() {
     }
     // Sort by match score at the DB layer so the row cap keeps the top matches
     // instead of only the most recent postings (only meaningful with a resume).
-    if (hasResume && (sortBy === 'match-desc' || sortBy === 'match-asc')) {
+    if (hasResume && sortBy === 'match-desc') {
       params.set('sort', sortBy);
     }
     // Cap payload size — full JD text + 10k+ rows OOMs/times out on Railway (HTTP 502).
@@ -151,6 +178,7 @@ export function JobsPage() {
       return res.data;
     },
     enabled: !rulesQuery.isLoading && resumeReady,
+    refetchOnMount: 'always',
     refetchInterval: (query) => {
       if (!hasResume) {
         return false;
@@ -162,6 +190,15 @@ export function JobsPage() {
       const pending = rows.some((job) => typeof job.matchScore !== 'number');
       return pending ? 8_000 : false;
     },
+  });
+
+  const latestFetchQuery = useQuery({
+    queryKey: ['jobs-latest-fetch'],
+    queryFn: async () => {
+      const res = await api<{ data: LatestFetch }>('/jobs/latest-fetch');
+      return res.data;
+    },
+    refetchOnMount: 'always',
   });
 
   const applicationsQuery = useQuery({
@@ -214,10 +251,35 @@ export function JobsPage() {
     },
   });
 
-  const jobs = useMemo(() => {
-    const india = (jobsQuery.data ?? []).filter((job) =>
-      isIndiaLocation(job.location),
+  const latestAllJobs = useMemo(
+    () =>
+      (latestFetchQuery.data?.jobs ?? []).filter((job) =>
+        isVisibleInJobList(job.location),
+      ),
+    [latestFetchQuery.data?.jobs],
+  );
+  const latestJobs = useMemo(() => {
+    if (!latestAbove50) {
+      return latestAllJobs;
+    }
+    return latestAllJobs.filter(
+      (job) => typeof job.matchScore === 'number' && job.matchScore > 50,
     );
+  }, [latestAllJobs, latestAbove50]);
+  const latestPagination = usePagination(latestJobs, 10);
+  const { setPage: setLatestPage } = latestPagination;
+
+  useEffect(() => {
+    setLatestPage(1);
+  }, [latestAbove50, setLatestPage]);
+
+  const jobs = useMemo(() => {
+    let india = (jobsQuery.data ?? []).filter((job) =>
+      isVisibleInJobList(job.location),
+    );
+    if (hideApplied) {
+      india = india.filter((job) => !isJobApplied(job.id, applicationByJobId));
+    }
     if (sortBy === 'latest') {
       return india;
     }
@@ -226,20 +288,20 @@ export function JobsPage() {
       const scoreA = a.matchScore ?? -1;
       const scoreB = b.matchScore ?? -1;
       if (scoreA !== scoreB) {
-        return sortBy === 'match-desc' ? scoreB - scoreA : scoreA - scoreB;
+        return scoreB - scoreA;
       }
       const dateA = new Date(a.postedDate ?? a.createdAt ?? 0).getTime();
       const dateB = new Date(b.postedDate ?? b.createdAt ?? 0).getTime();
       return dateB - dateA;
     });
     return scored;
-  }, [jobsQuery.data, sortBy]);
+  }, [jobsQuery.data, sortBy, hideApplied, applicationByJobId]);
   const pagination = usePagination(jobs, 10);
   const { setPage } = pagination;
 
   useEffect(() => {
     setPage(1);
-  }, [queryString, sortBy, setPage]);
+  }, [queryString, sortBy, hideApplied, setPage]);
 
   const roleOptions = useMemo(() => {
     const fromFacets = facetsQuery.data?.roles ?? [];
@@ -266,6 +328,7 @@ export function JobsPage() {
     filters.postedWithin,
     ...filters.companyIds,
     ...filters.roles,
+    ...filters.locations,
   ].filter((value) => value.trim()).length;
 
   const aboveThresholdCount = jobs.filter(
@@ -277,13 +340,64 @@ export function JobsPage() {
     setFilters((prev) => ({ ...prev, ...patch }));
   }
 
+  const fetchWindowLabel = formatFetchWindow(
+    latestFetchQuery.data?.startedAt ?? null,
+    latestFetchQuery.data?.fetchedAt ?? null,
+  );
+  const latestJobLabel = `${latestJobs.length} ${
+    latestJobs.length === 1 ? 'job' : 'jobs'
+  }`;
+  const latestFetchMeta = !latestFetchQuery.data?.fetchedAt
+    ? 'No company fetch has finished yet.'
+    : latestAllJobs.length === 0
+      ? `Fetched ${fetchWindowLabel}. No new jobs in this fetch.`
+      : latestAbove50
+        ? `Fetched ${fetchWindowLabel} · ${latestJobLabel} above 50%`
+        : `Fetched ${fetchWindowLabel} · ${latestJobLabel}`;
+
   return (
     <section className="page">
       <PageHeader
         eyebrow={hasResume ? 'Matched to your resume' : 'Shared job catalog'}
         title="Jobs for you"
-
       />
+
+      <div className="latest-fetch">
+        <div className="latest-fetch__head">
+          <div className="latest-fetch__title-row">
+            <h2 className="section-title">Latest fetch</h2>
+            <Button
+              variant={latestAbove50 ? 'primary' : 'ghost'}
+              size="sm"
+              aria-pressed={latestAbove50}
+              onClick={() => setLatestAbove50((on) => !on)}
+            >
+              &gt;50%
+            </Button>
+          </div>
+          <p className="latest-fetch__meta">
+              {latestFetchQuery.isLoading
+                ? 'Loading the latest fetch…'
+                : latestFetchQuery.isError
+                  ? (latestFetchQuery.error as Error).message
+                  : latestFetchMeta}
+          </p>
+        </div>
+        {latestFetchQuery.isLoading ? (
+          <LoadingState label="Loading latest fetch…" />
+        ) : latestFetchQuery.isError || latestAllJobs.length === 0 ? null : (
+          <JobResultsTable
+            pagination={latestPagination}
+            matchThreshold={matchThreshold}
+            hasResume={hasResume}
+            applicationByJobId={applicationByJobId}
+            actionJobId={actionJobId}
+            onTrack={(input) => trackMutation.mutate(input)}
+            showFetchedAt
+            emptyMessage="No jobs from this fetch scored above 50%."
+          />
+        )}
+      </div>
 
       <div className="match-summary">
         <div>
@@ -318,6 +432,8 @@ export function JobsPage() {
         </div>
       ) : null}
 
+      <h2 className="section-title">All jobs</h2>
+
       <div className="jobs-toolbar">
         <label className="field jobs-toolbar__search">
           <span className="field__label">
@@ -350,6 +466,14 @@ export function JobsPage() {
             </Button>
           ) : null}
           <Button
+            variant={hideApplied ? 'primary' : 'ghost'}
+            size="sm"
+            aria-pressed={hideApplied}
+            onClick={() => setHideApplied((on) => !on)}
+          >
+            Not applied
+          </Button>
+          <Button
             variant="ghost"
             size="sm"
             onClick={() => setShowFilters((visible) => !visible)}
@@ -370,7 +494,7 @@ export function JobsPage() {
 
       {showFilters ? (
         <div className="jobs-filters">
-          <div className="filter-grid cols-4">
+          <div className="filter-grid cols-5">
             <label className="field">
               <span className="field__label">Role</span>
               <MultiSelect
@@ -380,6 +504,20 @@ export function JobsPage() {
                 options={roleOptions}
                 placeholder="All roles"
                 searchPlaceholder="Search roles…"
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Location</span>
+              <MultiSelect
+                aria-label="Location"
+                value={filters.locations}
+                onChange={(locations) => patchFilters({ locations })}
+                options={LOCATION_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                }))}
+                placeholder="All locations"
+                searchPlaceholder="Search locations…"
               />
             </label>
             <label className="field">
@@ -420,238 +558,19 @@ export function JobsPage() {
       ) : jobsQuery.isError ? (
         <p className="error-text">{(jobsQuery.error as Error).message}</p>
       ) : (
-        <div className="table-panel">
-          <TableScroll>
-            <table className="data-table data-table--jobs">
-              <thead>
-                <tr>
-                  <th>Job ID</th>
-                  <th>Role</th>
-                  <th>Company</th>
-                  <th>Location</th>
-                  <th>Experience</th>
-                  <th>CTC</th>
-                  <th>Posted</th>
-                  <th>Match</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagination.pageItems.map((job) => {
-                  const matchedSkills = extractMatchedSkills(job.matchReasons);
-                  const missingSkills = (job.missingSkills ?? []).slice(0, 6);
-                  const jobId = job.id;
-                  const tracked = jobId
-                    ? applicationByJobId.get(jobId)
-                    : undefined;
-                  const isBookmarked = Boolean(tracked);
-                  const isApplied =
-                    tracked != null &&
-                    tracked.status !== 'SAVED' &&
-                    tracked.status !== 'REJECTED';
-                  const busy = Boolean(jobId && actionJobId === jobId);
-                  return (
-                  <tr key={jobId ?? `${job.title}-${job.applyUrl}`}>
-                    <td className="mono cell-meta">
-                      {extractExternalJobId(job.applyUrl) ?? '—'}
-                    </td>
-                    <td>
-                      <div className="cell-strong">{job.title}</div>
-                      <div className="cell-meta">
-                        {[job.provider, job.recommendation, job.matchSource]
-                          .filter(Boolean)
-                          .join(' · ') || null}
-                      </div>
-                      {matchedSkills.length > 0 ? (
-                        <div
-                          className="cell-meta cell-skills cell-skills--matched"
-                          title={matchedSkills.join(', ')}
-                        >
-                          Matched: {matchedSkills.join(', ')}
-                        </div>
-                      ) : null}
-                      {missingSkills.length > 0 ? (
-                        <div
-                          className="cell-meta cell-skills cell-skills--missing"
-                          title={missingSkills.join(', ')}
-                        >
-                          Missing: {missingSkills.join(', ')}
-                        </div>
-                      ) : null}
-                      {!matchedSkills.length &&
-                      !missingSkills.length &&
-                      job.skills ? (
-                        <div className="cell-meta cell-skills" title={job.skills}>
-                          {job.skills}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>{job.company}</td>
-                    <td>{job.location ?? '—'}</td>
-                    <td>
-                      {formatExperience(
-                        job.experience,
-                        job.description,
-                        job.title,
-                      )}
-                    </td>
-                    <td>{formatCtc(job.salary, job.salaryEstimate)}</td>
-                    <td>
-                      <span
-                        title={
-                          job.postedDate || job.createdAt
-                            ? new Date(
-                                job.postedDate ?? job.createdAt!,
-                              ).toLocaleString()
-                            : undefined
-                        }
-                      >
-                        {formatPostedRelative(job.postedDate, job.createdAt)}
-                      </span>
-                    </td>
-                    <td>
-                      {typeof job.matchScore === 'number' ? (
-                        <span
-                          className={
-                            job.matchScore >= matchThreshold
-                              ? 'match-score match-score--strong'
-                              : 'match-score'
-                          }
-                          title={
-                            job.matchScore >= matchThreshold
-                              ? `Meets your ${matchThreshold}% threshold`
-                              : `Below your ${matchThreshold}% threshold`
-                          }
-                        >
-                          {`${Math.round(job.matchScore)}%`}
-                        </span>
-                      ) : (
-                        <span
-                          className="match-score match-score--pending"
-                          title={
-                            hasResume
-                              ? 'Match score is calculating…'
-                              : 'Add a resume to score this job'
-                          }
-                        >
-                          {hasResume ? '…' : '—'}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="job-actions">
-                        <a
-                          href={job.applyUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={[
-                            'btn',
-                            'btn--sm',
-                            'job-apply',
-                            isApplied ? 'btn--primary' : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          aria-disabled={!jobId || busy}
-                          onClick={(e) => {
-                            if (!jobId || busy) {
-                              e.preventDefault();
-                              return;
-                            }
-                            if (!isApplied) {
-                              trackMutation.mutate({
-                                jobId,
-                                status: 'APPLIED',
-                              });
-                            }
-                          }}
-                        >
-                          {isApplied ? 'Applied' : 'Apply ↗'}
-                        </a>
-                        <button
-                          type="button"
-                          className={[
-                            'job-action-icon',
-                            isBookmarked ? 'is-active' : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          disabled={!jobId || busy}
-                          title={
-                            isBookmarked ? 'Remove bookmark' : 'Bookmark job'
-                          }
-                          aria-label={
-                            isBookmarked ? 'Remove bookmark' : 'Bookmark job'
-                          }
-                          onClick={() => {
-                            if (!jobId) {
-                              return;
-                            }
-                            if (tracked) {
-                              trackMutation.mutate({
-                                jobId,
-                                status: 'SAVED',
-                                applicationId: tracked.id,
-                                remove: true,
-                              });
-                              return;
-                            }
-                            trackMutation.mutate({
-                              jobId,
-                              status: 'SAVED',
-                            });
-                          }}
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            width="16"
-                            height="16"
-                            aria-hidden="true"
-                          >
-                            {isBookmarked ? (
-                              <path
-                                fill="currentColor"
-                                d="M6 2h12a1 1 0 0 1 1 1v19l-7-4-7 4V3a1 1 0 0 1 1-1z"
-                              />
-                            ) : (
-                              <path
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                d="M6 3h12a1 1 0 0 1 1 1v16.5L12 16l-7 4.5V4a1 1 0 0 1 1-1z"
-                              />
-                            )}
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-                {pagination.total === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="empty">
-                      {hasResume
-                        ? 'No India jobs in the catalog yet. Fetch companies from the Companies page, then wait for matching to fill scores.'
-                        : 'No India jobs in the catalog yet. Fetch companies from the Companies page.'}
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </TableScroll>
-          <Pagination
-            page={pagination.page}
-            pageCount={pagination.pageCount}
-            total={pagination.total}
-            from={pagination.from}
-            to={pagination.to}
-            pageSize={pagination.pageSize}
-            onPageChange={pagination.setPage}
-            onPageSizeChange={pagination.setPageSize}
-            label="jobs"
-          />
-        </div>
+        <JobResultsTable
+          pagination={pagination}
+          matchThreshold={matchThreshold}
+          hasResume={hasResume}
+          applicationByJobId={applicationByJobId}
+          actionJobId={actionJobId}
+          onTrack={(input) => trackMutation.mutate(input)}
+          emptyMessage={
+            hasResume
+              ? 'No India jobs in the catalog yet. Fetch companies from the Companies page, then wait for matching to fill scores.'
+              : 'No India jobs in the catalog yet. Fetch companies from the Companies page.'
+          }
+        />
       )}
     </section>
   );

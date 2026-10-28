@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractMicrosoftJobsFromPayload,
   MicrosoftProvider,
+  parseMicrosoftSearchResponse,
   resolveMicrosoftSearchUrl,
 } from './MicrosoftProvider.js';
 import type { Company } from '../../../domain/entities/Company.js';
@@ -56,6 +57,34 @@ describe('extractMicrosoftJobsFromPayload', () => {
       category: 'Engineering',
     });
     expect(jobs[0]?.applyUrl).toContain('/job/1823456');
+  });
+});
+
+describe('parseMicrosoftSearchResponse', () => {
+  it('reads India offices from the careers search payload', () => {
+    const jobs = parseMicrosoftSearchResponse({
+      data: {
+        count: 1,
+        positions: [
+          {
+            id: 1970393557021620,
+            displayJobId: '200055550',
+            name: 'Senior Software Engineer',
+            locations: ['India, Telangana, Hyderabad'],
+            department: 'Engineering',
+            postedTs: 1790996899,
+          },
+        ],
+      },
+    });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      jobId: '200055550',
+      title: 'Senior Software Engineer',
+      location: 'India, Telangana, Hyderabad',
+      category: 'Engineering',
+    });
+    expect(jobs[0]?.applyUrl).toContain('/job/200055550');
   });
 });
 

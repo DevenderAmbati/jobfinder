@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   AppleProvider,
+  applePostLocationId,
   extractAppleJobsFromPayload,
+  locationFromAppleCard,
+  parseAppleSearchHtml,
+  pickAppleTitle,
   resolveAppleSearchUrl,
+  withIndiaFallback,
 } from './AppleProvider.js';
 import type { Company } from '../../../domain/entities/Company.js';
 
@@ -49,6 +54,60 @@ describe('extractAppleJobsFromPayload', () => {
       team: 'IS&T',
     });
     expect(jobs[0]?.applyUrl).toContain('/details/200123456');
+  });
+});
+
+describe('Apple listing text', () => {
+  it('strips link chrome and keeps the role title', () => {
+    expect(
+      pickAppleTitle(
+        'See full role description',
+        'See full role description: Software Eng - Content Management Systems',
+      ),
+    ).toBe('Software Eng - Content Management Systems');
+  });
+
+  it('reads India locations from the card text', () => {
+    expect(
+      locationFromAppleCard('IN-Business Expert Location Various Locations within India'),
+    ).toBe('Various Locations within India');
+    expect(locationFromAppleCard('Software Engineer Bengaluru, Karnataka, India')).toBe(
+      'Bengaluru, Karnataka, India',
+    );
+  });
+
+  it('maps the public India search URL onto the jobs API filter', () => {
+    expect(
+      applePostLocationId('https://jobs.apple.com/en-us/search?location=india-INDC'),
+    ).toBe('postLocation-INDC');
+    expect(withIndiaFallback(null, 'https://jobs.apple.com/en-us/search?location=india-INDC')).toBe(
+      'India',
+    );
+  });
+});
+
+describe('parseAppleSearchHtml', () => {
+  it('reads title, city, and team from a job card', () => {
+    const html = `
+      <div class="job-title job-list-item">
+        <h3><a href="/en-us/details/200684375-1052/integration-engineering-software-engineer?team=SFTWR">Integration Engineering - Software Engineer</a></h3>
+        <span class="team-name mt-0">Software and Services</span>
+        <span class="job-posted-date">Sep 18, 2026</span>
+        <span id="search-store-name-container-1">Hyderabad</span>
+      </div>
+    `;
+    const jobs = parseAppleSearchHtml(
+      html,
+      'https://jobs.apple.com/en-us/search?location=india-INDC',
+    );
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      jobId: '200684375-1052',
+      title: 'Integration Engineering - Software Engineer',
+      location: 'Hyderabad, India',
+      team: 'Software and Services',
+    });
+    expect(jobs[0]?.applyUrl).toContain('/details/200684375-1052/');
   });
 });
 

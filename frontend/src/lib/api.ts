@@ -32,7 +32,17 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   const text = await response.text();
-  const payload = text ? (JSON.parse(text) as unknown) : null;
+  let payload: unknown = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text) as unknown;
+    } catch {
+      throw new ApiError(
+        'This fetch is still running. A large board can take a few minutes, so check Jobs again shortly.',
+        response.status || 504,
+      );
+    }
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -90,6 +100,12 @@ export interface JobListItem {
   matchReasons?: string[] | null;
   missingSkills?: string[] | null;
   createdAt?: string;
+}
+
+export interface LatestFetch {
+  startedAt: string | null;
+  fetchedAt: string | null;
+  jobs: JobListItem[];
 }
 
 export interface JobFacets {

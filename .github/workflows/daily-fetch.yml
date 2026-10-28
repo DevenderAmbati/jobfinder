@@ -1,0 +1,84 @@
+# Once-daily full scrape of all enabled companies → Firestore + Telegram notify.
+# Near-zero GCP compute: scrapes run here; Cloud Run stays at min-instances=0 for the API only.
+name: Daily fetch
+
+on:
+  schedule:
+    # 01:30 UTC ≈ 07:00 IST
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+    inputs:
+      retry_failed:
+        description: 'Only re-fetch companies whose latest provider log failed (or never ran)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    name: Fetch all companies
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: production
+      LOG_TO_FILES: 'false'
+      ENABLE_IN_PROCESS_CRON: 'false'
+      ENABLE_DEV_TOOLS: 'false'
+      TELEGRAM_WEBHOOK_MODE: 'false'
+      PLAYWRIGHT_HEADLESS: 'true'
+      PLAYWRIGHT_NO_SANDBOX: 'true'
+      PLAYWRIGHT_MAX_CONCURRENT: '2'
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      GEMINI_ENABLED: ${{ secrets.GEMINI_ENABLED }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Write Firebase service account
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "Missing secret FIREBASE_SERVICE_ACCOUNT (JSON service account key)"
+            exit 1
+          fi
+          echo "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+
+      - name: Fetch all enabled companies
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.retry_failed != true }}
+        run: npx tsx scripts/fetch-all.ts
+
+      - name: Retry failed companies only
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_failed == true }}
+        run: npx tsx scripts/fetch-all.ts --retry-failed --no-retry
+
+      - name: Upload analytics artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-fetch-analytics
+          path: |
+            backend/logs/fetch-analytics.json
+            backend/logs/fetch-analytics.md
+          if-no-files-found: ignore

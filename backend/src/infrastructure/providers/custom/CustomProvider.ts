@@ -3,7 +3,8 @@ import type { Job } from '../../../domain/entities/Job.js';
 import type { JobProvider } from '../../../domain/ports/JobProvider.js';
 import { AppError } from '../../../shared/errors/AppError.js';
 import { logger } from '../../../shared/utils/logger.js';
-import { stripHtml } from '../../../shared/utils/html.js';
+import { resolveScrapedLocation } from '../../../domain/services/listingLocation.js';
+import { decodeBasicEntities, stripHtml } from '../../../shared/utils/html.js';
 import { withChromiumBrowser } from '../../playwright/browserSession.js';
 
 export interface CustomScrapedJob {
@@ -51,7 +52,9 @@ export class CustomProvider implements JobProvider {
       company: company.name,
       careerUrl: company.careerUrl,
     });
-    const scraped = await this.listingFetcher(company, company.careerUrl);
+    const scraped = company.careerUrl.includes('card_search_api')
+      ? await fetchExaleadCareerListings(company.careerUrl, fetch, this.maxJobs)
+      : await this.listingFetcher(company, company.careerUrl);
     return scraped.slice(0, this.maxJobs).map((item) => ({
       company: company.name,
       companyId: company.id,
@@ -139,11 +142,15 @@ export function createPlaywrightCustomListingFetcher(options?: {
             const el = anchor as unknown as {
               href: string;
               textContent: string | null;
+              closest?: (selector: string) => { textContent?: string | null } | null;
             };
+            const card = el.closest?.('li, article, tr') ?? null;
             const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+            const cardText = (card?.textContent ?? '').replace(/\s+/g, ' ').trim();
             return {
               href: el.href,
               text,
+              cardText: cardText.slice(0, 400),
             };
           }),
       );
@@ -152,14 +159,21 @@ export function createPlaywrightCustomListingFetcher(options?: {
         if (!item.href || !looksLikeJobUrl(item.href) || item.text.length < 4) {
           continue;
         }
-        if (!jobs.has(item.href)) {
+        const location = resolveScrapedLocation(
+          `${item.text} ${item.cardText}`,
+          careerUrl,
+        );
+        const existing = jobs.get(item.href);
+        if (!existing) {
           jobs.set(item.href, {
             title: item.text.slice(0, 160),
             applyUrl: item.href,
-            location: null,
+            location,
             description: null,
             postedDate: null,
           });
+        } else if (!existing.location && location) {
+          jobs.set(item.href, { ...existing, location });
         }
       }
 
@@ -195,10 +209,11 @@ export function extractJobLinksFromHtml(
       continue;
     }
     if (!jobs.has(absolute)) {
+      const around = stripHtml(html.slice(match.index ?? 0, (match.index ?? 0) + 280));
       jobs.set(absolute, {
         title: text.slice(0, 160),
         applyUrl: absolute,
-        location: null,
+        location: resolveScrapedLocation(`${text} ${around}`, careerUrl),
         description: null,
         postedDate: null,
       });
@@ -271,10 +286,111 @@ export function extractJobsFromUnknownJson(
 function looksLikeJobUrl(url: string): boolean {
   try {
     const path = new URL(url).pathname.toLowerCase();
+    if (/\/careers\/.+-\d+\/?$/.test(path)) {
+      return true;
+    }
     return /job|opening|position|requisition|vacanc|opportunity/i.test(path);
   } catch {
     return /job|opening|position|requisition|vacanc|opportunity/i.test(url);
   }
+}
+
+/**
+ * Dassault Systèmes lists jobs from Exalead `card_search_api` (XML, not JSON).
+ * Keeps Country/India hits so a keyword search does not fill the cap with other regions.
+ */
+export function parseExaleadCareerHits(xml: string): CustomScrapedJob[] {
+  const jobs: CustomScrapedJob[] = [];
+  const hits = xml.split('<Hit');
+  for (const hit of hits.slice(1)) {
+    const categories = metaValue(hit, 'content_categories') ?? '';
+    if (!/Country\/India/i.test(categories)) {
+      continue;
+    }
+    const title = metaValue(hit, 'content_title');
+    const applyUrl = metaValue(hit, 'content_cta_1_url');
+    if (!title || !applyUrl) {
+      continue;
+    }
+    const city =
+      /City\/(.+?)(?:\s+Products\/|\s+Year\/|$)/i.exec(categories)?.[1]?.trim() ??
+      null;
+    jobs.push({
+      title: decodeBasicEntities(title),
+      applyUrl: decodeBasicEntities(applyUrl),
+      location: city ? decodeBasicEntities(city) : 'India',
+      description: null,
+      postedDate: parseExaleadDate(metaValue(hit, 'content_start_datetime')),
+    });
+  }
+  return jobs;
+}
+
+export async function fetchExaleadCareerListings(
+  careerUrl: string,
+  fetchImpl: typeof fetch = fetch,
+  maxJobs = 150,
+): Promise<CustomScrapedJob[]> {
+  const pageSize = 20;
+  const jobs: CustomScrapedJob[] = [];
+  const seen = new Set<string>();
+
+  for (let offset = 0; jobs.length < maxJobs && offset < 400; offset += pageSize) {
+    const pageUrl = new URL(careerUrl);
+    pageUrl.searchParams.set('hf', String(pageSize));
+    pageUrl.searchParams.set('b', String(offset));
+    const response = await fetchImpl(pageUrl.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: '*/*',
+        'User-Agent': 'Mozilla/5.0 (compatible; JobFinder/1.0)',
+      },
+    });
+    if (!response.ok) {
+      throw new AppError(
+        'PROVIDER_FETCH_FAILED',
+        `Career search HTTP ${response.status} for ${pageUrl.hostname}`,
+        502,
+      );
+    }
+    const xml = await response.text();
+    const batch = parseExaleadCareerHits(xml);
+    if (batch.length === 0 && offset > 0) {
+      break;
+    }
+    for (const job of batch) {
+      if (seen.has(job.applyUrl)) {
+        continue;
+      }
+      seen.add(job.applyUrl);
+      jobs.push(job);
+      if (jobs.length >= maxJobs) {
+        break;
+      }
+    }
+    const total = Number(/nhits="(\d+)"/.exec(xml)?.[1] ?? 0);
+    if (!Number.isFinite(total) || offset + pageSize >= total) {
+      break;
+    }
+  }
+
+  return jobs;
+}
+
+function metaValue(hit: string, name: string): string | null {
+  const match = new RegExp(
+    `Meta name="${name}"[\\s\\S]*?<MetaString name="value">([^<]*)`,
+  ).exec(hit);
+  const value = match?.[1]?.trim();
+  return value ? value : null;
+}
+
+function parseExaleadDate(raw: string | null): Date | null {
+  if (!raw) {
+    return null;
+  }
+  const parsed = new Date(raw.replace(/\//g, '-').replace(' ', 'T') + 'Z');
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function firstString(

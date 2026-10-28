@@ -26,7 +26,7 @@ ENV NODE_ENV=production \
     PLAYWRIGHT_NO_SANDBOX=true \
     ENABLE_DEV_TOOLS=false \
     ENABLE_IN_PROCESS_CRON=false \
-    TELEGRAM_WEBHOOK_MODE=true
+    TELEGRAM_WEBHOOK_MODE=false
 
 COPY --from=build /app/backend/package.json /app/backend/package-lock.json ./
 COPY --from=build /app/backend/node_modules ./node_modules

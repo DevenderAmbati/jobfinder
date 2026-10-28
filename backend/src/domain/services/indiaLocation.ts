@@ -47,6 +47,18 @@ const INDIA_LOCATION_TOKENS = [
 const INDIA_COUNTRY_CODE = /(^|,\s*)in(\s*,|$)/i;
 
 /**
+ * Places that must not count as India. "Austin, IN" is Indiana, and
+ * "Indiana" contains the letters "india".
+ */
+const ABROAD_LOCATION =
+  /\b(united states|united kingdom|u\.s\.a\.|u\.s\.|usa|canada|australia|germany|ireland|singapore|london|seattle|san francisco|mountain view|new york|california|texas|washington|indiana|indianapolis|austin|chicago|boston|dublin|berlin|tokyo|sydney|toronto)\b/i;
+
+function containsToken(haystack: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(haystack);
+}
+
+/**
  * True when the location string clearly refers to India (or a major Indian city).
  * Empty / null locations return false — callers decide whether to keep those.
  */
@@ -55,8 +67,11 @@ export function isIndiaLocation(location: string | null | undefined): boolean {
   if (!normalized) {
     return false;
   }
-  if (INDIA_LOCATION_TOKENS.some((token) => normalized.includes(token))) {
+  if (INDIA_LOCATION_TOKENS.some((token) => containsToken(normalized, token))) {
     return true;
+  }
+  if (ABROAD_LOCATION.test(normalized)) {
+    return false;
   }
   return INDIA_COUNTRY_CODE.test(normalized);
 }

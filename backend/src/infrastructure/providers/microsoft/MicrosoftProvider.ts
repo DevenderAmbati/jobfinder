@@ -225,6 +225,99 @@ function joinLocations(value: unknown): string | null {
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
+export function parseMicrosoftSearchResponse(payload: unknown): MicrosoftJobItem[] {
+  const data = (payload as { data?: { positions?: unknown[] } } | null)?.data;
+  const positions = Array.isArray(data?.positions) ? data.positions : [];
+  const jobs: MicrosoftJobItem[] = [];
+  const seen = new Set<string>();
+
+  for (const item of positions) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const title = typeof record.name === 'string' ? record.name.trim() : '';
+    const jobId =
+      firstString(record, ['displayJobId', 'atsJobId']) ||
+      firstString(record, ['id']);
+    if (!title || !jobId || seen.has(jobId)) {
+      continue;
+    }
+    seen.add(jobId);
+    const postedTs = typeof record.postedTs === 'number' ? record.postedTs : null;
+    jobs.push({
+      jobId,
+      title: title.slice(0, 160),
+      location: joinLocations(record.locations),
+      description: null,
+      applyUrl: `https://jobs.careers.microsoft.com/global/en/job/${encodeURIComponent(jobId)}`,
+      postedDate: postedTs ? new Date(postedTs * 1000) : null,
+      category: typeof record.department === 'string' ? record.department : null,
+    });
+  }
+
+  return jobs;
+}
+
+export async function fetchMicrosoftCareersListings(
+  searchUrl: string,
+  options: { maxJobs?: number; fetchImpl?: typeof fetch } = {},
+): Promise<MicrosoftJobItem[]> {
+  const maxJobs = options.maxJobs ?? 150;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const { query, location } = microsoftSearchParams(searchUrl);
+  const collected = new Map<string, MicrosoftJobItem>();
+  let total = Number.POSITIVE_INFINITY;
+
+  for (let start = 0; collected.size < maxJobs && start < total && start < 400; ) {
+    const api = new URL('https://apply.careers.microsoft.com/api/pcsx/search');
+    api.searchParams.set('domain', 'microsoft.com');
+    api.searchParams.set('query', query);
+    api.searchParams.set('location', location);
+    api.searchParams.set('start', String(start));
+    const response = await fetchImpl(api.toString(), {
+      headers: {
+        accept: 'application/json',
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      },
+    });
+    if (!response.ok) {
+      break;
+    }
+    const payload = (await response.json()) as {
+      data?: { count?: number };
+    };
+    if (typeof payload.data?.count === 'number') {
+      total = payload.data.count;
+    }
+    const page = parseMicrosoftSearchResponse(payload);
+    if (page.length === 0) {
+      break;
+    }
+    for (const job of page) {
+      if (!collected.has(job.jobId)) {
+        collected.set(job.jobId, job);
+      }
+    }
+    start += page.length;
+  }
+
+  return [...collected.values()].slice(0, maxJobs);
+}
+
+function microsoftSearchParams(searchUrl: string): { query: string; location: string } {
+  try {
+    const url = new URL(searchUrl);
+    return {
+      query: url.searchParams.get('q') ?? url.searchParams.get('query') ?? '',
+      location: url.searchParams.get('lc') ?? url.searchParams.get('location') ?? 'India',
+    };
+  } catch {
+    return { query: '', location: 'India' };
+  }
+}
+
 function toAbsoluteUrl(
   pathOrUrl: string | null,
   jobId: string,

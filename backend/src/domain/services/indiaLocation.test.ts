@@ -20,6 +20,9 @@ describe('isIndiaLocation', () => {
     expect(isIndiaLocation('US, Remote')).toBe(false);
     expect(isIndiaLocation('Singapore')).toBe(false);
     expect(isIndiaLocation('London, UK')).toBe(false);
+    expect(isIndiaLocation('Indiana, United States')).toBe(false);
+    expect(isIndiaLocation('Indianapolis, IN')).toBe(false);
+    expect(isIndiaLocation('Austin, IN')).toBe(false);
   });
 
   it('returns false for empty', () => {

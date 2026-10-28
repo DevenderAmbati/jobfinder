@@ -224,7 +224,12 @@ export class FirestoreJobRepository implements JobRepository {
       .map((role) => role.trim())
       .filter(Boolean);
     const search = options.search?.trim();
-    const location = options.location?.trim();
+    const locations = [
+      ...(options.locations ?? []),
+      ...(options.location ? [options.location] : []),
+    ]
+      .map((value) => value.trim())
+      .filter(Boolean);
     const skills = options.skills?.trim();
     const posted = options.postedWithin
       ? postedWindowBounds(options.postedWithin)
@@ -245,13 +250,25 @@ export class FirestoreJobRepository implements JobRepository {
         continue;
       }
 
+      if (options.createdFrom || options.createdTo) {
+        const createdAt = asDate(data.createdAt);
+        if (!createdAt) continue;
+        if (options.createdFrom && createdAt < options.createdFrom) continue;
+        if (options.createdTo && createdAt > options.createdTo) continue;
+      }
+
       if (roles.length > 0) {
         const title = String(data.title ?? '');
         const hit = roles.some((role) => containsInsensitive(title, role));
         if (!hit) continue;
       }
 
-      if (location && !containsInsensitive(String(data.location ?? ''), location)) {
+      if (
+        locations.length > 0 &&
+        !locations.some((value) =>
+          containsInsensitive(String(data.location ?? ''), value),
+        )
+      ) {
         continue;
       }
       if (skills && !containsInsensitive(String(data.skills ?? ''), skills)) {
@@ -287,6 +304,12 @@ export class FirestoreJobRepository implements JobRepository {
       ) {
         continue;
       }
+      if (
+        typeof options.scoreAbove === 'number' &&
+        (!match || !(match.matchScore > options.scoreAbove))
+      ) {
+        continue;
+      }
 
       rows.push({ id: doc.id, data, match });
     }
@@ -306,6 +329,12 @@ export class FirestoreJobRepository implements JobRepository {
           asDate(b.data.postedDate)?.getTime() ??
           asDate(b.data.createdAt)?.getTime() ??
           0;
+        return bDate - aDate;
+      });
+    } else if (options.sort === 'created') {
+      rows.sort((a, b) => {
+        const aDate = asDate(a.data.createdAt)?.getTime() ?? 0;
+        const bDate = asDate(b.data.createdAt)?.getTime() ?? 0;
         return bDate - aDate;
       });
     } else {

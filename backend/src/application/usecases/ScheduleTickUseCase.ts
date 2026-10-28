@@ -17,6 +17,11 @@ export interface ScheduleTickOptions {
    * Keeps Cloud Run CPU allocated for the duration of the request.
    */
   wait?: boolean;
+  /**
+   * When set, only these company ids are enqueued, even if they are not due.
+   * The regular scheduler tick omits this and still uses the cron schedule.
+   */
+  companyIds?: string[];
 }
 
 /**
@@ -31,12 +36,20 @@ export class ScheduleTickUseCase {
     options: ScheduleTickOptions = {},
   ): Promise<{ enqueued: string[]; forced: boolean }> {
     const force = options.force === true;
+    const onlyIds =
+      options.companyIds && options.companyIds.length > 0
+        ? new Set(options.companyIds)
+        : null;
     const companies = await this.deps.companies.findDueForRun(now);
     const enqueued: string[] = [];
 
     for (const company of companies) {
+      if (onlyIds && !onlyIds.has(company.id)) {
+        continue;
+      }
       if (
         !force &&
+        !onlyIds &&
         !isCompanyDue(company, now, this.deps.parseCronNext)
       ) {
         continue;

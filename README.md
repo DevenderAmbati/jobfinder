@@ -2,7 +2,7 @@
 
 Personal always-on job monitor: ATS providers → normalize/dedup → rules → Gemini or keyword match → Telegram.
 
-**Stack:** Firebase Auth + Firestore + Storage + Hosting · Cloud Run (Express + Playwright) · Cloud Scheduler · Telegram · Gemini
+**Stack:** Firebase Auth + Firestore + Storage + Hosting · Cloud Run API (scale-to-zero) · GitHub Actions daily scrape · Telegram · Gemini
 
 ---
 
@@ -68,7 +68,7 @@ npm run dev                  # proxies /api → :3001
 
 ### Deploy
 
-See [docs/FIREBASE.md](docs/FIREBASE.md) for Cloud Run + Hosting + Scheduler.
+See [docs/FIREBASE.md](docs/FIREBASE.md) for Cloud Run + Hosting + GitHub Actions daily fetch (and the GCP cost-cut checklist).
 
 ```bash
 # API worker

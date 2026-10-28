@@ -100,13 +100,23 @@ export function createApiRouter(
         }
         const body =
           req.body && typeof req.body === 'object'
-            ? (req.body as { force?: unknown; wait?: unknown })
+            ? (req.body as {
+                force?: unknown;
+                wait?: unknown;
+                companyIds?: unknown;
+              })
             : {};
         const force = body.force === true;
         const wait = body.wait !== false;
+        const companyIds = Array.isArray(body.companyIds)
+          ? body.companyIds.filter(
+              (id): id is string => typeof id === 'string' && id.trim().length > 0,
+            )
+          : undefined;
         const result = await container.scheduleTick.execute(new Date(), {
           force,
           wait,
+          companyIds,
         });
         res.status(200).json({
           data: {
@@ -139,6 +149,9 @@ export function createApiRouter(
     (req, res, next) => void companies.fetch(req, res, next),
   );
   apiRouter.get('/jobs', (req, res, next) => void jobs.list(req, res, next));
+  apiRouter.get('/jobs/latest-fetch', (req, res, next) =>
+    void jobs.latestFetch(req, res, next),
+  );
   apiRouter.get('/jobs/facets', (req, res, next) =>
     void jobs.facets(req, res, next),
   );
