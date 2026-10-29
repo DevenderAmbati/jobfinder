@@ -6,11 +6,36 @@ function startOfUtcDay(date = new Date()): Date {
   );
 }
 
+function utcDayKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+export type DailyAnalyticsPoint = {
+  date: string;
+  companiesFetched: number;
+  companiesCouldNotFetch: number;
+  companiesNewJobsFound: number;
+  companiesNoJobsFound: number;
+  jobsChecked: number;
+  jobsScoreAbove50: number;
+  jobsApplied: number;
+};
+
+type CompanyDayLog = {
+  startTime: Date;
+  error: string | null;
+  jobsFound: number;
+  jobsAdded: number;
+};
+
 export class FirestoreAnalytics {
   private db = getFirestore();
 
-  async summary(userId: string, minScore: number) {
+  async summary(userId: string, minScore: number, days = 14) {
+    const trendDays = Math.min(90, Math.max(7, Math.floor(days)));
     const todayStart = startOfUtcDay();
+    const rangeStart = new Date(todayStart);
+    rangeStart.setUTCDate(todayStart.getUTCDate() - (trendDays - 1));
 
     const [
       companiesSnap,
@@ -24,7 +49,7 @@ export class FirestoreAnalytics {
       this.db.collection('jobs').count().get(),
       this.db
         .collection('providerLogs')
-        .where('startTime', '>=', todayStart)
+        .where('startTime', '>=', rangeStart)
         .get(),
       this.db.collection('users').doc(userId).collection('matches').get(),
       this.db.collection('notificationLogs').get(),
@@ -32,19 +57,55 @@ export class FirestoreAnalytics {
     ]);
 
     const companiesTotal = companiesSnap.size;
-    const companiesMonitored = companiesSnap.docs.filter(
-      (d) => d.data().enabled !== false,
-    ).length;
+    const enabledIds = companiesSnap.docs
+      .filter((d) => d.data().enabled !== false)
+      .map((d) => d.id);
+    const companiesMonitored = enabledIds.length;
     const jobsTotal = jobsCountSnap.data().count;
 
-    let jobsCheckedToday = 0;
+    /** date -> companyId -> latest log that day */
+    const logsByDayCompany = new Map<string, Map<string, CompanyDayLog>>();
+    const jobsCheckedByDay = new Map<string, number>();
+
     for (const doc of providerLogsSnap.docs) {
-      jobsCheckedToday += Number(doc.data().jobsFound ?? 0);
+      const data = doc.data();
+      const startTime = asDate(data.startTime);
+      if (!startTime || startTime < rangeStart) continue;
+      const day = utcDayKey(startTime);
+      jobsCheckedByDay.set(
+        day,
+        (jobsCheckedByDay.get(day) ?? 0) + Number(data.jobsFound ?? 0),
+      );
+
+      const companyId =
+        typeof data.companyId === 'string' ? data.companyId.trim() : '';
+      if (!companyId) continue;
+
+      let byCompany = logsByDayCompany.get(day);
+      if (!byCompany) {
+        byCompany = new Map();
+        logsByDayCompany.set(day, byCompany);
+      }
+      const existing = byCompany.get(companyId);
+      if (existing && existing.startTime >= startTime) continue;
+      byCompany.set(companyId, {
+        startTime,
+        error:
+          data.error == null || data.error === ''
+            ? null
+            : String(data.error),
+        jobsFound: Number(data.jobsFound ?? 0),
+        jobsAdded: Number(data.jobsAdded ?? 0),
+      });
     }
 
+    const scoreAbove50ByDay = new Map<string, number>();
     let matchedJobs = 0;
     let ignoredJobs = 0;
+    let jobsScoreAbove50 = 0;
+    let jobsScoreAbove50Today = 0;
     const matchedIds = new Set<string>();
+
     for (const doc of matchesSnap.docs) {
       const data = doc.data();
       const score = Number(data.matchScore ?? 0);
@@ -56,24 +117,37 @@ export class FirestoreAnalytics {
       if (rec === 'SKIP' || score < minScore) {
         ignoredJobs += 1;
       }
+      if (score > 50) {
+        jobsScoreAbove50 += 1;
+        const stamped = asDate(data.updatedAt) ?? asDate(data.createdAt);
+        if (stamped && stamped >= rangeStart) {
+          const day = utcDayKey(stamped);
+          scoreAbove50ByDay.set(day, (scoreAbove50ByDay.get(day) ?? 0) + 1);
+          if (stamped >= todayStart) {
+            jobsScoreAbove50Today += 1;
+          }
+        }
+      }
     }
     ignoredJobs += Math.max(0, jobsTotal - matchedIds.size);
 
-    let notificationsTotal = notifSnap.size;
-    let notificationsToday = 0;
-    let notificationsSuccess = 0;
-    for (const doc of notifSnap.docs) {
-      const data = doc.data();
-      if (data.success) notificationsSuccess += 1;
-      const created = asDate(data.createdAt);
-      if (created && created >= todayStart) notificationsToday += 1;
-    }
-    void notificationsTotal;
-
+    const appliedByDay = new Map<string, number>();
+    let jobsAppliedToday = 0;
     const applicationsByStatus: Record<string, number> = {};
+
     for (const doc of appsSnap.docs) {
-      const status = String(doc.data().status ?? 'SAVED');
+      const data = doc.data();
+      const status = String(data.status ?? 'SAVED');
       applicationsByStatus[status] = (applicationsByStatus[status] ?? 0) + 1;
+      const appliedAt = asDate(data.appliedAt);
+      if (!appliedAt || appliedAt < rangeStart) continue;
+      // Count pipeline applications (not bookmarks).
+      if (status === 'SAVED') continue;
+      const day = utcDayKey(appliedAt);
+      appliedByDay.set(day, (appliedByDay.get(day) ?? 0) + 1);
+      if (appliedAt >= todayStart) {
+        jobsAppliedToday += 1;
+      }
     }
 
     const applied =
@@ -82,11 +156,74 @@ export class FirestoreAnalytics {
       (applicationsByStatus.OFFER ?? 0) +
       (applicationsByStatus.JOINED ?? 0);
 
+    let notificationsToday = 0;
+    let notificationsSuccess = 0;
+    for (const doc of notifSnap.docs) {
+      const data = doc.data();
+      if (data.success) notificationsSuccess += 1;
+      const created = asDate(data.createdAt);
+      if (created && created >= todayStart) notificationsToday += 1;
+    }
+
+    const dailyTrend: DailyAnalyticsPoint[] = [];
+    for (let i = trendDays - 1; i >= 0; i -= 1) {
+      const dayDate = new Date(todayStart);
+      dayDate.setUTCDate(todayStart.getUTCDate() - i);
+      const day = utcDayKey(dayDate);
+      const byCompany = logsByDayCompany.get(day) ?? new Map();
+
+      let companiesFetched = 0;
+      let companiesCouldNotFetch = 0;
+      let companiesNewJobsFound = 0;
+      let companiesNoJobsFound = 0;
+
+      for (const log of byCompany.values()) {
+        if (log.error) {
+          companiesCouldNotFetch += 1;
+          continue;
+        }
+        companiesFetched += 1;
+        if (log.jobsAdded > 0) companiesNewJobsFound += 1;
+        if (log.jobsFound === 0) companiesNoJobsFound += 1;
+      }
+
+      // Only treat missing companies as "couldn't fetch" when this day
+      // actually had at least one provider log (a run started). Otherwise a
+      // missed schedule shows every company as failed.
+      if (byCompany.size > 0) {
+        for (const id of enabledIds) {
+          if (!byCompany.has(id)) {
+            companiesCouldNotFetch += 1;
+          }
+        }
+      }
+
+      dailyTrend.push({
+        date: day,
+        companiesFetched,
+        companiesCouldNotFetch,
+        companiesNewJobsFound,
+        companiesNoJobsFound,
+        jobsChecked: jobsCheckedByDay.get(day) ?? 0,
+        jobsScoreAbove50: scoreAbove50ByDay.get(day) ?? 0,
+        jobsApplied: appliedByDay.get(day) ?? 0,
+      });
+    }
+
+    const todayPoint = dailyTrend[dailyTrend.length - 1];
+
     return {
       companiesTotal,
       companiesMonitored,
       jobsTotal,
-      jobsCheckedToday,
+      jobsCheckedToday: todayPoint?.jobsChecked ?? 0,
+      companiesFetchedToday: todayPoint?.companiesFetched ?? 0,
+      companiesCouldNotFetchToday: todayPoint?.companiesCouldNotFetch ?? 0,
+      companiesNewJobsFoundToday: todayPoint?.companiesNewJobsFound ?? 0,
+      companiesNoJobsFoundToday: todayPoint?.companiesNoJobsFound ?? 0,
+      jobsScoreAbove50,
+      jobsScoreAbove50Today,
+      jobsAppliedToday,
       matchedJobs,
       ignoredJobs,
       notificationsTotal: notifSnap.size,
@@ -95,6 +232,8 @@ export class FirestoreAnalytics {
       applied,
       applicationsByStatus,
       matchScoreThresholdUsed: minScore,
+      days: trendDays,
+      dailyTrend,
       asOf: new Date().toISOString(),
     };
   }
@@ -156,10 +295,6 @@ export class FirestoreAnalytics {
       asOf: new Date().toISOString(),
     };
   }
-}
-
-function utcDayKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
 }
 
 function startOfUtcWeek(date: Date): Date {
