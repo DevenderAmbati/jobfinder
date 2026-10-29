@@ -1,9 +1,13 @@
 # Once-daily full scrape of all enabled companies → Firestore + Telegram notify.
 # Near-zero GCP compute: scrapes run here; Cloud Run stays at min-instances=0 for the API only.
+#
+# Preferred trigger: external cron → workflow_dispatch (cron-job.org or GCP Scheduler).
+# See docs/CRON_JOB_ORG.md — GitHub's built-in schedule can skip days.
 name: Daily fetch
 
 on:
   schedule:
+    # Backup only (best-effort). Primary: cron-job.org / GCP → workflow_dispatch.
     # 01:30 UTC ≈ 07:00 IST
     - cron: '30 1 * * *'
   workflow_dispatch:
@@ -12,6 +16,8 @@ on:
         description: 'Only re-fetch companies whose latest provider log failed (or never ran)'
         type: boolean
         default: false
+  repository_dispatch:
+    types: [daily-fetch]
 
 concurrency:
   group: daily-fetch

@@ -44,11 +44,13 @@ gcloud run services update jobfinder-api \
 
 ## Daily scrape (GitHub Actions)
 
-Production cron is **not** Cloud Scheduler. Use the **Daily fetch** workflow:
+Scrapes run on **GitHub Actions** ([`daily-fetch.yml`](../.github/workflows/daily-fetch.yml)):
 
-- Schedule: once daily (`30 1 * * *` UTC ≈ 07:00 IST)
+- **Primary trigger:** [cron-job.org → workflow_dispatch](./CRON_JOB_ORG.md) at **07:00 IST** (reliable; free)
+- **Backup:** GitHub `schedule: '30 1 * * *'` (can skip under load)
+- **Optional GCP backup:** [`scripts/setup-gcp-github-dispatch-cron.ps1`](../scripts/setup-gcp-github-dispatch-cron.ps1)
 - Runs `npx tsx scripts/fetch-all.ts` (all enabled companies + one auto-retry of failures)
-- Prints **daily analytics** (fetched / couldn't fetch / new jobs / no jobs), writes `backend/logs/fetch-analytics.*`, appends to the Actions job summary, and Telegram-notifies linked users (or `TELEGRAM_CHAT_ID`)
+- Prints **daily analytics**, writes `backend/logs/fetch-analytics.*`, Telegram-notifies linked users
 - Manual: Actions → Daily fetch → Run workflow (optional “retry failed only”)
 
 ### Required GitHub secrets
